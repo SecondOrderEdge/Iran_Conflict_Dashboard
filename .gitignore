@@ -1,0 +1,54 @@
+# ── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.pyo
+
+# ── Virtual environments ─────────────────────────────────────────────────────
+venv/
+.venv/
+env/
+.env/
+ENV/
+
+# ── Jupyter / IPython ────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ── Generated dashboard outputs ──────────────────────────────────────────────
+# CSV exports
+conflict_escalation_dashboard_output.csv
+conflict_dashboard_latest.csv
+
+# PNG charts
+conflict_escalation_chart.png
+conflict_duration_chart.png
+signal_contributions_chart.png
+
+# PDF reports (except sample in root, excluded below)
+conflict_dashboard_report.pdf
+
+# ── Credentials / secrets ─────────────────────────────────────────────────────
+.env
+*.env
+secrets.json
+credentials.json
+
+# ── OS / editor cruft ────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
