@@ -1,0 +1,16 @@
+# Iran Conflict Escalation Dashboard — Python dependencies
+# Install with: pip install -r requirements.txt
+#
+# Note: This notebook is optimised for Google Colab. Colab pre-installs
+# numpy, pandas, matplotlib, and requests. The packages below are the
+# complete set required for a clean local environment.
+
+yfinance>=0.2.18
+requests>=2.28.0
+pandas>=1.5.0
+numpy>=1.23.0
+matplotlib>=3.6.0
+plotly>=5.13.0
+reportlab>=3.6.12
+kaleido>=0.2.1
+scipy>=1.9.0
