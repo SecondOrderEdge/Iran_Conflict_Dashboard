@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/SecondOrderEdge/Iran_Conflict_Dashboard/blob/main/Iran_Conflict_Dashboard.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/SecondOrderEdge/Iran_Conflict_Dashboard/blob/main/conflict_escalation_dashboard_ml_pdf_v5.ipynb)
 [![GitHub Stars](https://img.shields.io/github/stars/SecondOrderEdge/Iran_Conflict_Dashboard?style=social)](https://github.com/SecondOrderEdge/Iran_Conflict_Dashboard/stargazers)
 
 A **quantitative geopolitical risk dashboard** that combines financial market signals, news analytics (GDELT), and optional ground-truth conflict event data (ACLED) to produce probabilistic assessments of Iran-Israel conflict escalation — along with actionable portfolio regime guidance.
@@ -36,7 +36,7 @@ A **quantitative geopolitical risk dashboard** that combines financial market si
 
 ## Overview
 
-The Iran Conflict Escalation Dashboard monitors **12 financial market instruments** and up to **4 GDELT news query streams** to generate a daily composite escalation score. That score is converted via softmax into three mutually exclusive probability states:
+The Iran Conflict Escalation Dashboard monitors **14 financial market instruments** and up to **4 GDELT news query streams** (with automatic RSS fallback) to generate a daily composite escalation score. A **hybrid heuristic + Random Forest ML layer** converts that score into three mutually exclusive probability states:
 
 | State | Description |
 |---|---|
@@ -60,11 +60,16 @@ Both outputs are combined to generate a **portfolio regime recommendation** — 
 
 - **Zero-cost by default** — Market data via `yfinance`, news data via the free GDELT API. No paid subscriptions required to run the baseline model.
 - **GDELT integration** — Queries conflict volume and sentiment tone across Iran/Israel, Strait of Hormuz, proxy attacks, and ceasefire/negotiation signals.
+- **RSS fallback** — If GDELT rate-limits, the model automatically falls back to Google News RSS feeds via `feedparser` so news signals are never completely dark.
 - **Optional ACLED support** — Plug in ACLED credentials for ground-truth conflict event counts that feed directly into the model.
-- **15-signal composite model** — Weighted, z-scored, and normalized across market and news dimensions.
+- **Hybrid ML + heuristic model** — A `scikit-learn` Random Forest classifier is trained on market signals and its escalation probability is blended with the weighted heuristic score.
+- **16-signal composite model** — Weighted, z-scored, and normalized across market, crypto, and news dimensions.
+- **Model confidence score** — Tracks the fraction of live signals contributing to the current run; displayed in the dashboard output.
+- **Data availability dashboard** — Real-time layer status (Live / Partial / Down) for market, news, and event data sources.
+- **Crypto risk-off signal** — Bitcoin price action added as an additional cross-asset risk indicator.
 - **Softmax probability outputs** — Smooth probability distributions rather than hard threshold triggers.
 - **Automated PDF report** — ReportLab-generated multi-page report with charts, probability tables, and portfolio guidance.
-- **CSV exports** — Full historical timeseries and latest-day snapshot for downstream analysis.
+- **CSV exports** — Full historical timeseries, latest-day snapshot, and data availability summary for downstream analysis.
 - **Interactive charts** — Plotly-based visualizations for exploration in Colab/Jupyter.
 - **Colab-native** — Designed to run top-to-bottom in Google Colab with no local setup required.
 - **Exponential backoff** — Robust HTTP retry logic for GDELT queries in shared runtime environments.
@@ -77,7 +82,7 @@ The fastest way to run this dashboard is directly in Google Colab — no install
 
 1. Click the badge at the top of this README:
 
-   [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/SecondOrderEdge/Iran_Conflict_Dashboard/blob/main/Iran_Conflict_Dashboard.ipynb)
+   [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/SecondOrderEdge/Iran_Conflict_Dashboard/blob/main/conflict_escalation_dashboard_ml_pdf_v5.ipynb)
 
 2. In the Colab menu, select **Runtime → Run all** (or press `Ctrl+F9`).
 
@@ -117,7 +122,7 @@ source venv/bin/activate        # macOS / Linux
 pip install -r requirements.txt
 
 # 4. Launch Jupyter
-jupyter notebook Iran_Conflict_Dashboard.ipynb
+jupyter notebook conflict_escalation_dashboard_ml_pdf_v5.ipynb
 ```
 
 ---
@@ -167,43 +172,59 @@ GDELT is fully open and requires no credentials. The dashboard queries GDELT v2 
 ### Data Sources
 
 ```
-┌─────────────────────────────────────────────┐
-│               DATA INGESTION                │
-├──────────────┬──────────────┬───────────────┤
-│  Yahoo Finance│  GDELT v2    │  ACLED        │
-│  (yfinance)  │  Doc API     │  (optional)   │
-│              │              │               │
-│  12 tickers  │  4 query     │  Ground-truth │
-│  90-day OHLC │  streams     │  event counts │
-└──────┬───────┴──────┬───────┴──────┬────────┘
-       │              │              │
-       └──────────────┴──────────────┘
-                      │
-               build_indicator_table()
+┌──────────────┬──────────────────────────────┬───────────────┐
+│  Yahoo Finance│  News (GDELT v2 → RSS fallback)│  ACLED        │
+│  (yfinance)  │                              │  (optional)   │
+│              │  GDELT rate-limited?          │               │
+│  14 tickers  │  └─ yes → feedparser RSS     │  Ground-truth │
+│  90-day OHLC │  └─ no  → GDELT + RSS merge  │  event counts │
+└──────┬───────┴──────────────┬───────────────┴──────┬────────┘
+       │                      │                      │
+       └──────────────────────┴──────────────────────┘
+                              │
+                     build_indicator_table()
+                              │
+                     build_signal_table()   ← 16 normalized signals
+                              │
+              ┌───────────────┴───────────────┐
+              │  Heuristic weighted score     │
+              │  + Random Forest ML blend     │
+              └───────────────┬───────────────┘
+                              │
+                    softmax → [p_deesc, p_stab, p_esc]
+                              │
+                    portfolio regime + duration model
 ```
 
 ### Signal Construction
 
-The `build_signal_table()` function converts raw indicators into **15 normalized signals**, each clipped to the range `[-1, +1]` via rolling z-scores:
+The `build_signal_table()` function converts raw indicators into **16 normalized signals**, each clipped to the range `[-1, +1]` via rolling z-scores:
 
-1. **Market signals** — Computed from 5-day percentage changes and level changes in market prices
-2. **News volume signals** — GDELT article count z-scores (higher volume = more signal)
-3. **News tone signals** — GDELT sentiment scores, inverted so that more negative tone increases escalation signal
+1. **Market level signals** — Brent crude, natural gas, and VIX evaluated against a 60-day rolling baseline (level z-scores rather than short-term % changes, which better captures persistent conflict regimes)
+2. **News volume signals** — GDELT / RSS article count z-scores (higher volume = more signal)
+3. **News tone signals** — GDELT / RSS sentiment scores, inverted so that more negative tone increases the escalation signal
 4. **Relative performance signals** — Energy and defense sectors vs. the broad S&P 500
+5. **Crypto risk-off signal** — Bitcoin 5-day % change, inverted (falling BTC alongside rising oil/VIX = cross-asset risk-off confirmation)
 
 ### Escalation Model
 
 ```
-signal_table (15 signals × weights) → weighted_sum → 3-day rolling mean
+signal_table (16 signals × weights)
+     ↓
+availability-weighted sum → 3-day rolling mean
      ↓
 escalation_score  ∈  [-1, +1]
      ↓
-softmax over anchors [-0.45, 0.0, +0.45]
+Heuristic: softmax over anchors [-0.45, 0.0, +0.45]
+     +
+ML layer: Random Forest trained on market signals
      ↓
-[p_deescalation, p_stabilization, p_escalation]  (sum = 1.0)
+blended [p_deescalation, p_stabilization, p_escalation]  (sum = 1.0)
+     +
+model_confidence = live_signal_weight / total_weight
 ```
 
-The softmax anchor points were chosen to produce near-equal probabilities at a neutral score of 0 and to saturate at extreme scores around ±0.45. These can be adjusted in `add_escalation_probabilities()`.
+The softmax anchors produce near-equal probabilities at a neutral score of 0 and saturate at extreme scores around ±0.45. The Random Forest is trained on 7 market features each run; if insufficient data is available (<20 rows), the model falls back to heuristic-only.
 
 ### Duration Model
 
@@ -235,23 +256,24 @@ The regime is determined by the latest escalation score and escalation probabili
 
 | Signal | Weight | Source | Description |
 |---|---|---|---|
-| `oil_shock` | 12% | yfinance BZ=F | 5-day % change in Brent crude, rolling z-score |
-| `conflict_news` | 10% | GDELT | Iran/Israel conflict article volume, z-scored |
-| `ceasefire_signal` | 10% | GDELT | Ceasefire/negotiation volume, **inverted** (high = bearish for escalation) |
-| `hormuz_news` | 10% | GDELT | Strait of Hormuz disruption article volume, z-scored |
-| `vol_shock` | 8% | yfinance ^VIX | 5-day change in VIX |
-| `conflict_tone_neg` | 8% | GDELT | Iran/Israel conflict tone, **inverted** (more negative tone = more escalation) |
-| `proxy_news` | 8% | GDELT | Proxy attack article volume, z-scored |
+| `conflict_news` | 10% | GDELT / RSS | Iran/Israel conflict article volume, z-scored |
+| `ceasefire_signal` | 10% | GDELT / RSS | Ceasefire/negotiation volume, **inverted** (high = bearish for escalation) |
+| `hormuz_news` | 10% | GDELT / RSS | Strait of Hormuz disruption article volume, z-scored |
+| `vol_shock` | 8% | yfinance ^VIX | VIX price level, 60-day rolling z-score |
+| `conflict_tone_neg` | 8% | GDELT / RSS | Iran/Israel conflict tone, **inverted** (more negative = more escalation) |
+| `proxy_news` | 8% | GDELT / RSS | Proxy attack (Hezbollah/Houthis/Iraqi militias) article volume, z-scored |
+| `oil_shock` | 7% | yfinance BZ=F | Brent crude price level, 60-day rolling z-score |
 | `acled_events` | 7% | ACLED | Ground-truth conflict event count, z-scored (0 if ACLED disabled) |
-| `gas_shock` | 6% | yfinance NG=F | 5-day % change in natural gas futures, z-scored |
-| `hormuz_tone_neg` | 6% | GDELT | Hormuz news tone, **inverted** |
-| `iran_instability` | 5% | GDELT | Iran internal instability article volume, z-scored |
+| `gas_shock` | 6% | yfinance NG=F | Natural gas price level, 60-day rolling z-score |
+| `hormuz_tone_neg` | 6% | GDELT / RSS | Hormuz news tone, **inverted** |
+| `crypto_risk_off` | 5% | yfinance BTC-USD | BTC 5-day % change, **inverted** (falling crypto = cross-asset risk-off) |
+| `iran_instability` | 5% | GDELT / RSS | Iran internal instability article volume, z-scored |
 | `energy_rel` | 4% | yfinance XLE/SPY | XLE 5-day return minus SPY 5-day return, z-scored |
 | `defense_rel` | 3% | yfinance ITA/SPY | ITA 5-day return minus SPY 5-day return, z-scored |
-| `bond_stress` | 2% | yfinance TLT | 5-day % change in TLT, **inverted** (falling bonds = stress) |
-| `credit_stress` | 1% | yfinance HYG | 5-day % change in HYG, **inverted** (falling HY = stress) |
+| `bond_stress` | 2% | yfinance TLT | TLT 5-day % change, **inverted** (falling bonds = stress) |
+| `credit_stress` | 1% | yfinance HYG | HYG 5-day % change, **inverted** (falling HY = stress) |
 
-Weights sum to 1.0. All signals are normalized to `[-1, +1]` before weighting.
+Weights sum to 1.0. All signals are normalized to `[-1, +1]` before weighting. If a data source is unavailable, its weight is redistributed proportionally across live signals and reflected in the model confidence score.
 
 ---
 
@@ -271,6 +293,8 @@ Weights sum to 1.0. All signals are normalized to `[-1, +1]` before weighting.
 | `TLT` | iShares 20+ Year Treasury Bond ETF | Fixed Income |
 | `HYG` | iShares iBoxx High Yield Corporate Bond ETF | Fixed Income |
 | `SPY` | SPDR S&P 500 ETF Trust | Benchmark |
+| `BTC-USD` | Bitcoin | Crypto / Risk Sentiment |
+| `ETH-USD` | Ethereum | Crypto / Risk Sentiment |
 
 ---
 
@@ -282,6 +306,7 @@ After a full run, the notebook produces the following artifacts in the working d
 |---|---|
 | `conflict_escalation_dashboard_output.csv` | Full 90-day timeseries of all signals, probabilities, and regimes |
 | `conflict_dashboard_latest.csv` | Single-row snapshot of the latest trading day |
+| `data_availability_summary.csv` | Layer status (Live / Partial / Down) for each data source on the latest run |
 | `conflict_dashboard_report.pdf` | Multi-page PDF report with charts, tables, and narrative |
 | `conflict_escalation_chart.png` | Static PNG of escalation probability chart |
 | `conflict_duration_chart.png` | Static PNG of duration probability chart |
@@ -291,7 +316,7 @@ After a full run, the notebook produces the following artifacts in the working d
 
 ## Example Output
 
-A sample PDF report generated by the dashboard is included in this repository: [`conflict_dashboard_report (2).pdf`](./conflict_dashboard_report%20(2).pdf)
+A sample PDF report generated by the dashboard is included in this repository: [`conflict_dashboard_report (4).pdf`](./conflict_dashboard_report%20(4).pdf)
 
 The report includes:
 - Current escalation score and probability breakdown
@@ -343,4 +368,4 @@ This project is licensed under the MIT License. See [LICENSE](./LICENSE) for det
 
 ---
 
-*Built with [yfinance](https://github.com/ranaroussi/yfinance), [GDELT](https://www.gdeltproject.org/), [Plotly](https://plotly.com/), [ReportLab](https://www.reportlab.com/), and [SciPy](https://scipy.org/).*
+*Built with [yfinance](https://github.com/ranaroussi/yfinance), [GDELT](https://www.gdeltproject.org/), [scikit-learn](https://scikit-learn.org/), [feedparser](https://feedparser.readthedocs.io/), [Plotly](https://plotly.com/), [ReportLab](https://www.reportlab.com/), and [SciPy](https://scipy.org/).*
