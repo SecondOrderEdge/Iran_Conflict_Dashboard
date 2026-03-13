@@ -50,7 +50,7 @@ A parallel **duration model** estimates the most probable conflict timeline if e
 |---|---|
 | Short conventional war | 2–4 weeks |
 | Extended conflict | 1–3 months |
-| Long proxy / hybrid conflict | 6–24 months |
+| Long proxy / hybrid conflict | 6m+ |
 
 Both outputs are combined to generate a **portfolio regime recommendation** — a plain-language description of risk posture adjustments appropriate to each state.
 
@@ -234,7 +234,7 @@ Three competing duration scenarios each receive a score from a linear combinatio
 |---|---|
 | Short war (2–4w) | Low proxy activity, low Hormuz stress, falling oil and VIX |
 | Extended conflict (1–3m) | High escalation score, Hormuz disruption, oil shock |
-| Long proxy / hybrid (6–24m) | High proxy news, Iran instability, failed ceasefire signals |
+| Long proxy / hybrid (6m+) | High proxy news, Iran instability, failed ceasefire signals |
 
 Softmax is applied across the three scores to produce a probability vector.
 
