@@ -37,7 +37,7 @@ A **quantitative geopolitical risk dashboard** that combines financial market si
 
 ## Overview
 
-The Iran Conflict Escalation Dashboard monitors **14 financial market instruments**, up to **4 GDELT news query streams** (with automatic RSS fallback), and a **GitHub-hosted OSINT attack-wave database** to generate a daily composite escalation score. A **hybrid heuristic + Random Forest ML layer** converts that score into three mutually exclusive probability states:
+The Iran Conflict Escalation Dashboard monitors **17 financial market instruments** (including a physical tanker-equity Hormuz basket), up to **4 GDELT news query streams** (with automatic RSS fallback), and a **GitHub-hosted OSINT attack-wave database** to generate a daily composite escalation score. A **hybrid heuristic + Random Forest ML layer** converts that score into three mutually exclusive probability states:
 
 | State | Description |
 |---|---|
@@ -65,8 +65,13 @@ Both outputs are combined to generate a **portfolio regime recommendation** — 
 - **OSINT event layer** — Pulls a GitHub-hosted database of OSINT-verified Iran-Israel operations, contributing munitions-use and air-defense failure signals to the model.
 - **Optional ACLED support** — Plug in ACLED credentials for ground-truth conflict event counts that feed directly into the model.
 - **Hybrid ML + heuristic model** — A `scikit-learn` Random Forest classifier is trained on OSINT-verified operation days and its escalation probability is blended with the weighted heuristic score.
+- **Temporal ML holdout** — The Random Forest enforces a strict 60-day train/test split and reports holdout ROC-AUC separately, so overfitting on thin event history is visible rather than hidden.
 - **Empirical weight optimization** — Market signal weights are derived from logistic regression on OSINT ground truth, replacing circular heuristic weighting.
-- **18-signal composite model** — Weighted, z-scored, and normalized across market, crypto, news, and event dimensions.
+- **Causal / confirming signal taxonomy** — Signals are tagged as `causal` (drive the escalation score and regime trigger) or `confirming` (market-return based, shown as a separate corroboration layer). This breaks the XLE → overweight XLE circular reference.
+- **20-signal composite model** — Weighted, z-scored, and normalized across market, crypto, news, event, and physical-market dimensions.
+- **Physical Hormuz signals** — Tanker-equity basket (FRO / STNG / DHT) and Brent-WTI spread added as forward-looking physical market proxies for Strait of Hormuz stress, supplementing GDELT tone signals.
+- **Sub-sector regime guidance** — Regime recommendations broken to sub-sector level (upstream E&P, midstream, refining, defense primes, defense services) rather than generic ETF direction.
+- **OSINT lead/lag validation** — Cross-correlation of OSINT operation days vs. market escalation score at lags −5 to +5 days, confirming whether the event layer leads or lags the market.
 - **Iran Conflict Escalation Index (ICEI)** — A 0–100 index mapped from the raw escalation score, with bootstrap confidence intervals from the last 30 trading days.
 - **Backtest validation** — ROC-AUC computed on the full market signal layer vs. OSINT-verified operation days (non-circular).
 - **Model confidence score** — Tracks the fraction of live signals contributing to the current run; displayed in the dashboard output.
@@ -220,14 +225,15 @@ The OSINT layer pulls a public SQLite database of OSINT-verified Iran-Israel ope
 
 ### Signal Construction
 
-The `build_signal_table()` function converts raw indicators into **18 normalized signals**, each clipped to the range `[-1, +1]` via rolling z-scores:
+The `build_signal_table()` function converts raw indicators into **20 normalized signals**, each clipped to the range `[-1, +1]` via rolling z-scores. Signals are tagged as **causal** (drive the escalation score) or **confirming** (market-return based; shown as a corroboration layer only):
 
-1. **Market level signals** — Brent crude, natural gas, and VIX evaluated against a 60-day rolling baseline (level z-scores capture persistent conflict regimes better than short-term % changes)
-2. **News volume signals** — GDELT / RSS article count z-scores (higher volume = more signal)
-3. **News tone signals** — GDELT / RSS sentiment scores, inverted so that more negative tone increases the escalation signal
-4. **Relative performance signals** — Energy and defense sectors vs. the broad S&P 500
-5. **OSINT event signals** — Munitions-use count and air-defense failure rate from the OSINT database, z-scored
-6. **Crypto risk-off signal** — Bitcoin 5-day % change, inverted (falling BTC alongside rising oil/VIX = cross-asset risk-off confirmation)
+1. **Market level signals** *(causal)* — Brent crude, natural gas, and VIX vs. a 60-day rolling baseline
+2. **News volume signals** *(causal)* — GDELT / RSS article count z-scores
+3. **News tone signals** *(causal)* — GDELT / RSS sentiment scores, inverted (more negative = more escalation)
+4. **Physical Hormuz signals** *(causal)* — Tanker-equity basket (FRO/STNG/DHT 5-day return) and Brent-WTI spread, both z-scored; these lead GDELT tone by 1–3 days because tanker equities trade on forward fixture expectations
+5. **OSINT event signals** *(causal)* — Munitions-use count and air-defense failure rate from the OSINT database, z-scored
+6. **Relative performance signals** *(confirming)* — Energy and defense sectors vs. S&P 500; displayed separately and excluded from regime trigger to avoid circularity
+7. **Crypto / credit / bond stress signals** *(confirming)* — BTC, HYG, TLT; lagging cross-asset risk-off indicators
 
 ### Escalation Model
 
@@ -247,7 +253,7 @@ blended [p_deescalation, p_stabilization, p_escalation]  (sum = 1.0)
 model_confidence = live_signal_weight / total_weight
 ```
 
-Market signal weights are optionally derived from logistic regression on OSINT ground truth (`ENABLE_WEIGHT_OPTIMIZATION = True`). The Random Forest is trained on 8 market features each run; if insufficient data is available (<20 rows), the model falls back to heuristic-only.
+Market signal weights are optionally derived from logistic regression on OSINT ground truth (`ENABLE_WEIGHT_OPTIMIZATION = True`). The Random Forest is trained on 8 market features (including `tanker_stress`) with a strict 60-day temporal holdout — holdout ROC-AUC is printed and included in the PDF, making overfitting on thin event history visible. If fewer than 30 training days are available, the RF is skipped entirely rather than fitting noise.
 
 ### Iran Conflict Escalation Index (ICEI)
 
@@ -279,9 +285,13 @@ The regime is determined by the latest escalation score and escalation probabili
 
 | Regime | Trigger | Guidance |
 |---|---|---|
-| **Escalation** | `p_escalation > 0.50` AND `escalation_score > 0.20` | Overweight energy/defense; reduce fragile cyclicals; hold cash or liquid hedges; avoid adding duration aggressively |
-| **De-escalation** | `p_deescalation > 0.50` AND `escalation_score < -0.20` | Rotate into oversold cyclicals and broad beta in tranches; reduce tactical energy overweight; add selectively to duration-sensitive assets |
+| **Escalation** | `p_escalation > 0.50` AND `escalation_score > 0.20` | Overweight upstream E&P (XOP) and defense primes (LMT/RTX/NOC); underweight refining (margin squeeze risk); midstream neutral; reduce fragile cyclicals; hold cash or liquid hedges |
+| **De-escalation** | `p_deescalation > 0.50` AND `escalation_score < -0.20` | Reduce upstream E&P tactically; overweight refining (crack-spread normalisation); add midstream on weakness; rotate into oversold cyclicals in tranches |
 | **Stabilization** | All other conditions | Stay balanced; avoid headline chasing; keep hedges lighter but intact; favor quality and liquidity |
+
+The sub-sector breakdown is generated per-run in the PDF report and notebook output. Key distinctions: **upstream E&P (XOP)** moves on spot crude; **midstream** is infrastructure-insulated; **refining margins compress** when crude spikes without demand recovery; **defense primes** (LMT/RTX/NOC) benefit from contract backlogs but carry a 6–18 month procurement lag.
+
+The regime trigger uses **causal signals only** (news, OSINT, VIX, commodity levels, physical Hormuz proxies). Market-return confirming signals (XLE/SPY, ITA/SPY, BTC, TLT, HYG) are displayed separately as a corroboration layer and do not gate the classification — this prevents the model from recommending overweighting XLE on the basis of XLE outperformance.
 
 > **Important:** Regime recommendations are systematic outputs of a quantitative model, not investment advice. Market conditions are multi-causal and no model captures the full complexity of geopolitical events.
 
@@ -291,28 +301,32 @@ The regime is determined by the latest escalation score and escalation probabili
 
 ## Signal Reference
 
-| Signal | Weight | Source | Description |
-|---|---|---|---|
-| `conflict_news` | 8% | GDELT / RSS | Iran/Israel conflict article volume, z-scored |
-| `ceasefire_signal` | 10% | GDELT / RSS | Ceasefire/negotiation volume, **inverted** (high = bearish for escalation) |
-| `hormuz_news` | 8% | GDELT / RSS | Strait of Hormuz disruption article volume, z-scored |
-| `vol_shock` | 8% | yfinance ^VIX | VIX price level, 60-day rolling z-score |
-| `conflict_tone_neg` | 8% | GDELT / RSS | Iran/Israel conflict tone, **inverted** (more negative = more escalation) |
-| `proxy_news` | 8% | GDELT / RSS | Proxy attack (Hezbollah/Houthis/Iraqi militias) article volume, z-scored |
-| `oil_shock` | 7% | yfinance BZ=F | Brent crude price level, 60-day rolling z-score |
-| `acled_events` | 4% | ACLED | Ground-truth conflict event count, z-scored (0 if ACLED disabled) |
-| `osint_munitions` | 4% | OSINT DB | OSINT-verified munitions/operations count, z-scored |
-| `osint_intercept_fail` | 3% | OSINT DB | OSINT air-defense failure rate, z-scored |
-| `gas_shock` | 6% | yfinance NG=F | Natural gas price level, 60-day rolling z-score |
-| `hormuz_tone_neg` | 6% | GDELT / RSS | Hormuz news tone, **inverted** |
-| `crypto_risk_off` | 5% | yfinance BTC-USD | BTC 5-day % change, **inverted** (falling crypto = cross-asset risk-off) |
-| `iran_instability` | 5% | GDELT / RSS | Iran internal instability article volume, z-scored |
-| `energy_rel` | 4% | yfinance XLE/SPY | XLE 5-day return minus SPY 5-day return, z-scored |
-| `defense_rel` | 3% | yfinance ITA/SPY | ITA 5-day return minus SPY 5-day return, z-scored |
-| `bond_stress` | 2% | yfinance TLT | TLT 5-day % change, **inverted** (falling bonds = stress) |
-| `credit_stress` | 1% | yfinance HYG | HYG 5-day % change, **inverted** (falling HY = stress) |
+Signals are tagged **causal** (drive escalation score and regime trigger) or **confirming** (market-return based; corroboration layer only — not used to trigger regime).
 
-Weights sum to 1.0. All signals are normalized to `[-1, +1]` before weighting. If `ENABLE_WEIGHT_OPTIMIZATION = True`, market-component weights are replaced by logistic-regression-derived values at runtime. If a data source is unavailable, its weight is redistributed proportionally across live signals and reflected in the model confidence score.
+| Signal | Weight | Role | Source | Description |
+|---|---|---|---|---|
+| `conflict_news` | 8% | causal | GDELT / RSS | Iran/Israel conflict article volume, z-scored |
+| `ceasefire_signal` | 10% | causal | GDELT / RSS | Ceasefire/negotiation volume, **inverted** |
+| `hormuz_news` | 8% | causal | GDELT / RSS | Strait of Hormuz disruption article volume, z-scored |
+| `vol_shock` | 8% | causal | yfinance ^VIX | VIX price level, 60-day rolling z-score |
+| `conflict_tone_neg` | 8% | causal | GDELT / RSS | Iran/Israel conflict tone, **inverted** |
+| `proxy_news` | 8% | causal | GDELT / RSS | Proxy attack article volume, z-scored |
+| `oil_shock` | 7% | causal | yfinance BZ=F | Brent crude price level, 60-day rolling z-score |
+| `acled_events` | 4% | causal | ACLED | Ground-truth event count, z-scored (0 if disabled) |
+| `osint_munitions` | 4% | causal | OSINT DB | OSINT-verified munitions/operations count, z-scored |
+| `osint_intercept_fail` | 3% | causal | OSINT DB | OSINT air-defense failure rate, z-scored |
+| `gas_shock` | 6% | causal | yfinance NG=F | Natural gas price level, 60-day rolling z-score |
+| `hormuz_tone_neg` | 3% | causal | GDELT / RSS | Hormuz news tone, **inverted** (reduced from 6%; physical proxies added) |
+| `tanker_stress` | 2% | causal | yfinance FRO/STNG/DHT | Equal-weight tanker-equity basket 5-day return, z-scored; leads GDELT tone by 1–3 days |
+| `brent_wti_spread` | 1% | causal | yfinance BZ=F / CL=F | Brent minus WTI spread, 60-day z-score; positive = Middle East supply-risk premium building |
+| `iran_instability` | 5% | causal | GDELT / RSS | Iran internal instability article volume, z-scored |
+| `energy_rel` | 4% | **confirming** | yfinance XLE/SPY | XLE 5-day return minus SPY — corroboration only |
+| `defense_rel` | 3% | **confirming** | yfinance ITA/SPY | ITA 5-day return minus SPY — corroboration only |
+| `crypto_risk_off` | 5% | **confirming** | yfinance BTC-USD | BTC 5-day % change, **inverted** — corroboration only |
+| `bond_stress` | 2% | **confirming** | yfinance TLT | TLT 5-day % change, **inverted** — corroboration only |
+| `credit_stress` | 1% | **confirming** | yfinance HYG | HYG 5-day % change, **inverted** — corroboration only |
+
+Weights sum to 1.0. Causal signal weights are renormalized to 1.0 for the escalation score; confirming weights apply only to the separate confirming composite. If `ENABLE_WEIGHT_OPTIMIZATION = True`, market-component weights are replaced by logistic-regression-derived values at runtime.
 
 ---
 
@@ -334,6 +348,9 @@ Weights sum to 1.0. All signals are normalized to `[-1, +1]` before weighting. I
 | `SPY` | SPDR S&P 500 ETF Trust | Benchmark |
 | `BTC-USD` | Bitcoin | Crypto / Risk Sentiment |
 | `ETH-USD` | Ethereum | Crypto / Risk Sentiment |
+| `FRO` | Frontline Group — VLCC tanker operator | Physical Hormuz Proxy |
+| `STNG` | Scorpio Tankers — product tanker, Hormuz-route exposed | Physical Hormuz Proxy |
+| `DHT` | DHT Holdings — VLCC, Brent-route exposed | Physical Hormuz Proxy |
 
 ---
 
@@ -347,12 +364,13 @@ After a full run, the notebook produces the following artifacts in the working d
 | `conflict_dashboard_latest.csv` | Single-row snapshot of the latest trading day |
 | `escalation_index_history.csv` | ICEI (0–100) history with bootstrap confidence intervals |
 | `data_availability_summary.csv` | Layer status (Live / Partial / Down) for each data source on the latest run |
-| `conflict_dashboard_report.pdf` | Multi-page PDF report with charts, tables, and narrative |
+| `conflict_dashboard_report.pdf` | Multi-page PDF report with sub-sector guidance, corroboration layer, all charts, tables, and narrative |
 | `conflict_escalation_chart.png` | 90-day escalation score trend with 3-day moving average |
 | `conflict_duration_chart.png` | Conflict duration probability curves (2–4w, 1–3m, 6m+) |
 | `signal_contributions_chart.png` | Bar chart showing each signal's contribution to today's score |
 | `escalation_index_chart.png` | ICEI history chart (0–100 scale with confidence bands) |
 | `backtest_validation_chart.png` | Market escalation signal vs. OSINT-verified operations (ROC-AUC backtest) |
+| `osint_lead_lag_chart.png` | Cross-correlation of OSINT operation days vs. market escalation score at lags −5 to +5 days |
 
 ---
 
