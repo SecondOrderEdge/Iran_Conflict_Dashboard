@@ -49,9 +49,12 @@ The following areas are actively sought:
 | **New data sources** | Shipping rates (BDI), satellite AIS data, social media sentiment |
 | **Alternative signals** | Options market implied volatility term structure, CDS spreads |
 | **Model improvements** | Backtesting against historical escalation events (2019 Abqaiq attack, 2020 Soleimani strike) |
+| **OSINT database** | Expanding or curating the OSINT attack-wave database used for ground-truth model training |
+| **ICEI calibration** | Tuning ICEI component budgets or bootstrap parameters (`N_BOOTSTRAP`, confidence interval methodology) |
+| **Weight optimization** | Alternative approaches to `ENABLE_WEIGHT_OPTIMIZATION` (e.g., regularized regression, time-decayed weighting) |
 | **Additional tickers** | Emerging market ETFs, airline/shipping equities |
 | **Automation** | GitHub Actions workflow for scheduled daily runs |
-| **Tests** | Unit tests for `build_signal_table()`, `add_escalation_probabilities()`, etc. |
+| **Tests** | Unit tests for `build_signal_table()`, `add_escalation_probabilities()`, `get_weights()`, etc. |
 | **Documentation** | Methodology explanations, signal justifications, worked examples |
 
 ---
@@ -61,7 +64,8 @@ The following areas are actively sought:
 - Keep changes to the notebook **sectioned and annotated** — each major section should have a markdown header explaining what it does.
 - Use descriptive variable names; avoid single-letter abbreviations outside tight numerical loops.
 - New signals should follow the existing normalization pipeline: raw → z-score → clip → normalize to `[-1, +1]`.
-- If adding a new weighted signal, update the `get_weights()` function and ensure all weights still sum to 1.0.
+- If adding a new weighted signal, update the `get_weights()` function and ensure all weights still sum to 1.0. If `ENABLE_WEIGHT_OPTIMIZATION = True`, empirical weights are derived at runtime via logistic regression — verify your new signal does not break this path.
+- OSINT-sourced signals must pull from the public OSINT database (or a configurable URL) and never embed raw event data in the notebook.
 - Do not hard-code credentials. Always read from environment variables.
 
 ---
@@ -75,6 +79,7 @@ Before submitting a PR, please confirm:
 - [ ] No credentials, API keys, or personal data are included
 - [ ] No large binary files are committed (PDFs, PNGs, CSVs)
 - [ ] The notebook still runs cleanly top-to-bottom in Google Colab
+- [ ] If modifying the OSINT layer, `ENABLE_OSINT = False` still produces a valid (reduced) model run
 
 ---
 
