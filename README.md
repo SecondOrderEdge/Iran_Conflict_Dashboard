@@ -285,6 +285,8 @@ The regime is determined by the latest escalation score and escalation probabili
 
 > **Important:** Regime recommendations are systematic outputs of a quantitative model, not investment advice. Market conditions are multi-causal and no model captures the full complexity of geopolitical events.
 
+> **On output volatility:** During periods of active or rapidly evolving conflict, day-to-day outputs can be highly volatile. z-scores shift as the rolling baseline absorbs new data, the 3-day smoothing window is intentionally short, and news signals respond to media cycles as much as ground truth. The regime classification (Escalation / Stabilization / De-escalation) can flip on a single day's data. **The 90-day trend chart and multi-day ICEI trajectory are more informative than any single day's probability reading.** Treat individual snapshots as noisy inputs to a directional view, not as precise triggers.
+
 ---
 
 ## Signal Reference
@@ -394,6 +396,8 @@ Nothing in this repository — including the code, outputs, charts, PDF reports,
 - **No warranty of accuracy.** The model relies on third-party data sources (Yahoo Finance, GDELT, ACLED, public OSINT databases) that may be delayed, incomplete, or incorrect. The model itself is a simplification of complex geopolitical and financial dynamics and will frequently be wrong.
 
 - **Past signals do not predict future outcomes.** Geopolitical events are inherently unpredictable. No model can reliably forecast conflict escalation or financial market reactions to geopolitical events.
+
+- **Outputs are point-in-time and volatile.** During periods of active or rapidly evolving conflict, day-to-day model outputs — including regime classifications and probability readings — can shift substantially on a single day's data. Always interpret outputs in the context of multi-day trends rather than individual snapshots.
 
 - **Not a substitute for professional advice.** Before making any investment decision, consult a qualified financial advisor, legal counsel, or other appropriate professional.
 
