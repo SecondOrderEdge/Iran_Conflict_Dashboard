@@ -71,14 +71,15 @@ Both outputs are combined to generate a **portfolio regime recommendation** — 
 - **20-signal composite model** — Weighted, z-scored, and normalized across market, crypto, news, event, and physical-market dimensions.
 - **Physical Hormuz signals** — Tanker-equity basket (FRO / STNG / DHT) and Brent-WTI spread added as forward-looking physical market proxies for Strait of Hormuz stress, supplementing GDELT tone signals.
 - **Sub-sector regime guidance** — Regime recommendations broken to sub-sector level (upstream E&P, midstream, refining, defense primes, defense services) rather than generic ETF direction.
-- **OSINT lead/lag validation** — Cross-correlation of OSINT operation days vs. market escalation score at lags −5 to +5 days, confirming whether the event layer leads or lags the market.
-- **Iran Conflict Escalation Index (ICEI)** — A 0–100 index mapped from the raw escalation score, with bootstrap confidence intervals from the last 30 trading days.
+- **OSINT lead/lag validation** — Cross-correlation of OSINT operation days vs. market escalation score at lags −10 to +10 days. Result is typically coincident (lag=0); supports use as a real-time monitoring framework rather than a standalone timing signal.
+- **Iran Conflict Escalation Index (ICEI)** — A 0–100 index mapped from the raw escalation score, with bootstrap confidence intervals from the last 30 trading days. Interpretive range guide in the PDF: 0–30 low pressure, 30–50 below-neutral, 50–70 mixed/stabilization, 70+ elevated escalation.
 - **Backtest validation** — ROC-AUC computed on the full market signal layer vs. OSINT-verified operation days (non-circular).
-- **Model confidence score** — Tracks the fraction of live signals contributing to the current run; displayed in the dashboard output.
+- **Signal Coverage** — Tracks the fraction of core signal families currently returning live data; displayed in the dashboard output as "Signal Coverage" (data availability, not forecast certainty).
 - **Data availability dashboard** — Real-time layer status (Live / Partial / Down) for market, news, and event data sources.
 - **Crypto risk-off signal** — Bitcoin price action added as an additional cross-asset risk indicator.
 - **Softmax probability outputs** — Smooth probability distributions rather than hard threshold triggers.
-- **Automated PDF report** — ReportLab-generated multi-page report with charts, probability tables, and portfolio guidance.
+- **Automated PDF report** — ReportLab-generated multi-page report with charts, probability tables, sub-sector guidance, regime change triggers, and ICEI interpretive range guide.
+- **Regime Change Triggers** — The PDF includes a model-native table of conditions that would argue for a regime reassessment (e.g. sustained ICEI above 70, P(Escalation) exceeding P(Stabilization) for consecutive runs). Thresholds are directional guides, not calibrated confidence bounds.
 - **CSV exports** — Full historical timeseries, latest-day snapshot, ICEI history, and data availability summary for downstream analysis.
 - **Interactive charts** — Plotly-based visualizations for exploration in Colab/Jupyter.
 - **Colab-native** — Designed to run top-to-bottom in Google Colab with no local setup required.
@@ -285,9 +286,9 @@ The regime is determined by the latest escalation score and escalation probabili
 
 | Regime | Trigger | Guidance |
 |---|---|---|
-| **Escalation** | `p_escalation > 0.50` AND `escalation_score > 0.20` | Overweight upstream E&P (XOP) and defense primes (LMT/RTX/NOC); underweight refining (margin squeeze risk); midstream neutral; reduce fragile cyclicals; hold cash or liquid hedges |
-| **De-escalation** | `p_deescalation > 0.50` AND `escalation_score < -0.20` | Reduce upstream E&P tactically; overweight refining (crack-spread normalisation); add midstream on weakness; rotate into oversold cyclicals in tranches |
-| **Stabilization** | All other conditions | Stay balanced; avoid headline chasing; keep hedges lighter but intact; favor quality and liquidity |
+| **Escalation** | `p_escalation > 0.50` AND `escalation_score > 0.20` | Overweight upstream E&P (XOP) and defense primes (LMT/RTX/NOC); underweight refining (margin squeeze risk); midstream neutral; preserve existing hedges — do not add broad equity risk on headline dips; reduce fragile cyclicals; avoid aggressively extending duration |
+| **De-escalation** | `p_deescalation > 0.50` AND `escalation_score < -0.20` | Reduce upstream E&P tactically; overweight refining (crack-spread normalisation); add midstream on weakness; rotate into oversold cyclicals in tranches; do not fully unwind hedges until signal confirms sustained de-escalation |
+| **Stabilization** | All other conditions | Maintain neutral broad equity exposure; do not add incremental risk on headline moves. Preserve existing hedges but do not materially increase them. Favour liquidity and quality until OSINT, sentiment, and market-active signals align more clearly. Avoid concentration in pure conflict-beta names absent confirming signals. |
 
 The sub-sector breakdown is generated per-run in the PDF report and notebook output. Key distinctions: **upstream E&P (XOP)** moves on spot crude; **midstream** is infrastructure-insulated; **refining margins compress** when crude spikes without demand recovery; **defense primes** (LMT/RTX/NOC) benefit from contract backlogs but carry a 6–18 month procurement lag.
 
