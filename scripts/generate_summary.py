@@ -162,13 +162,31 @@ if not api_key:
 client = anthropic.Anthropic(api_key=api_key)
 
 print("Calling Claude for summary...")
-message = client.messages.create(
-    model="claude-haiku-4-5-20251001",
-    max_tokens=600,
-    messages=[{"role": "user", "content": prompt}]
-)
-summary_md = message.content[0].text
-print("Summary generated.")
+try:
+    message = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=600,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    summary_md = message.content[0].text
+    print("Summary generated.")
+except anthropic.BadRequestError as e:
+    if "credit balance" in str(e).lower():
+        print(f"WARNING: Anthropic credit balance too low — writing fallback summary. Add credits at console.anthropic.com.")
+    else:
+        print(f"WARNING: Anthropic API error ({e}) — writing fallback summary.")
+    summary_md = (
+        f"**Automated summary unavailable** (Anthropic API error — see workflow logs).\n\n"
+        f"Current regime: **{regime}** | ICEI: {icei} | P(Escalation): {p_esc} | "
+        f"Escalation Score: {esc_score}."
+    )
+except Exception as e:
+    print(f"WARNING: Unexpected error calling Claude ({e}) — writing fallback summary.")
+    summary_md = (
+        f"**Automated summary unavailable** (see workflow logs).\n\n"
+        f"Current regime: **{regime}** | ICEI: {icei} | P(Escalation): {p_esc} | "
+        f"Escalation Score: {esc_score}."
+    )
 print("---")
 print(summary_md)
 print("---")

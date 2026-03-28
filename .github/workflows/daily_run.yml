@@ -135,6 +135,7 @@ jobs:
       # Skipped silently if ANTHROPIC_API_KEY is not set.
       - name: Generate Claude summary
         if: success() && env.HAS_ANTHROPIC == 'true'
+        continue-on-error: true   # billing/API errors don't block email or artifacts
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OUTPUT_DIR: outputs
