@@ -1,0 +1,97 @@
+name: Daily Dashboard Run
+
+on:
+  schedule:
+    # 06:00 UTC Monday–Friday (markets closed on weekends; no new data)
+    - cron: "0 6 * * 1-5"
+  workflow_dispatch:       # allow manual trigger from the Actions tab
+
+permissions:
+  contents: write          # needed to commit output artifacts back to the repo
+
+jobs:
+  run-dashboard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      # ── Checkout ───────────────────────────────────────────────────────────
+      - uses: actions/checkout@v4
+
+      # ── Python ────────────────────────────────────────────────────────────
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # ── Dependencies ──────────────────────────────────────────────────────
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install papermill nbconvert ipykernel
+          python -m ipykernel install --user --name python3
+
+      # ── BigQuery credentials (optional) ──────────────────────────────────
+      # To enable BigQuery GDELT, add your GCP service-account JSON as a
+      # repository secret named GCP_SERVICE_ACCOUNT_KEY (Settings → Secrets).
+      # If the secret is absent the workflow falls back to the REST API.
+      - name: Write GCP credentials
+        if: secrets.GCP_SERVICE_ACCOUNT_KEY != ''
+        env:
+          GCP_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+        run: |
+          echo "$GCP_KEY" > /tmp/gcp_key.json
+          echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp_key.json" >> $GITHUB_ENV
+
+      # ── Run notebook with papermill ───────────────────────────────────────
+      # Parameters override config values at the cell level:
+      #   USE_DRIVE=False  — no Google Drive in CI; outputs go to ./outputs/
+      #   ENABLE_BIGQUERY  — True only when GCP credentials are present
+      - name: Run dashboard notebook
+        env:
+          ENABLE_BIGQUERY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY != '' && 'True' || 'False' }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        run: |
+          mkdir -p outputs
+          papermill \
+            conflict_escalation_dashboard_ml_pdf_v5.ipynb \
+            outputs/executed_notebook.ipynb \
+            -p USE_DRIVE False \
+            -p OUTPUT_DIR "outputs/" \
+            --kernel python3 \
+            --execution-timeout 1200 \
+            --report-mode
+
+      # ── Upload artifacts ──────────────────────────────────────────────────
+      - name: Upload outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-outputs-${{ github.run_id }}
+          path: |
+            outputs/conflict_dashboard_report.pdf
+            outputs/conflict_escalation_dashboard_output.csv
+            outputs/conflict_dashboard_latest.csv
+            outputs/escalation_index_history.csv
+            outputs/data_availability_summary.csv
+            outputs/conflict_escalation_chart.png
+            outputs/escalation_index_chart.png
+            outputs/backtest_validation_chart.png
+            outputs/executed_notebook.ipynb
+          retention-days: 30
+
+      # ── Commit latest snapshot back to repo (optional) ───────────────────
+      # Keeps a rolling latest-day CSV in the repo for downstream use.
+      # Comment out this step if you don't want automated commits.
+      - name: Commit latest snapshot
+        if: success()
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          mkdir -p latest
+          cp outputs/conflict_dashboard_latest.csv  latest/ 2>/dev/null || true
+          cp outputs/data_availability_summary.csv  latest/ 2>/dev/null || true
+          cp outputs/conflict_escalation_chart.png  latest/ 2>/dev/null || true
+          git add latest/
+          git diff --cached --quiet || git commit -m "chore: daily dashboard snapshot $(date -u +%Y-%m-%d)"
+          git push
