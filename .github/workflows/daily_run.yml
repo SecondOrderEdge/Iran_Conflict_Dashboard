@@ -29,7 +29,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          pip install papermill nbconvert ipykernel
+          pip install papermill nbconvert ipykernel anthropic
           python -m ipykernel install --user --name python3
 
       # ── BigQuery credentials (optional) ──────────────────────────────────
@@ -63,7 +63,7 @@ jobs:
       # ── Detect regime change and build alert payload ──────────────────────
       # Compares today's regime/ICEI against the last committed snapshot in
       # latest/conflict_dashboard_latest.csv.  Writes alert metadata to
-      # outputs/alert.env so downstream steps can branch on it.
+      # GITHUB_ENV so downstream steps can branch on it.
       - name: Detect regime change
         if: success()
         run: |
@@ -88,8 +88,8 @@ jobs:
               try: return float(d.get(k, "nan"))
               except: return float("nan")
 
-          prev_icei = safe_float(prev, "icei")
-          curr_icei = safe_float(curr, "icei")
+          prev_icei  = safe_float(prev, "icei")
+          curr_icei  = safe_float(curr, "icei")
           curr_p_esc = safe_float(curr, "p_escalation")
           curr_score = safe_float(curr, "escalation_score")
 
@@ -97,16 +97,15 @@ jobs:
 
           # ICEI threshold alerts: crossing 70 (elevated) or 30 (low pressure)
           icei_alert = ""
-          if not (curr_icei != curr_icei):  # not NaN
-              if not (prev_icei != prev_icei):
-                  if prev_icei < 70 <= curr_icei:
-                      icei_alert = f"ICEI crossed above 70 ({curr_icei:.1f}) — elevated escalation territory"
-                  elif prev_icei >= 70 > curr_icei:
-                      icei_alert = f"ICEI dropped below 70 ({curr_icei:.1f}) — leaving elevated territory"
-                  elif prev_icei > 30 >= curr_icei:
-                      icei_alert = f"ICEI dropped below 30 ({curr_icei:.1f}) — low-pressure territory"
-                  elif prev_icei <= 30 < curr_icei:
-                      icei_alert = f"ICEI crossed above 30 ({curr_icei:.1f}) — leaving low-pressure territory"
+          if curr_icei == curr_icei and prev_icei == prev_icei:  # not NaN
+              if prev_icei < 70 <= curr_icei:
+                  icei_alert = f"ICEI crossed above 70 ({curr_icei:.1f}) — elevated escalation territory"
+              elif prev_icei >= 70 > curr_icei:
+                  icei_alert = f"ICEI dropped below 70 ({curr_icei:.1f}) — leaving elevated territory"
+              elif prev_icei > 30 >= curr_icei:
+                  icei_alert = f"ICEI dropped below 30 ({curr_icei:.1f}) — low-pressure territory"
+              elif prev_icei <= 30 < curr_icei:
+                  icei_alert = f"ICEI crossed above 30 ({curr_icei:.1f}) — leaving low-pressure territory"
 
           should_alert = regime_changed or bool(icei_alert)
 
@@ -124,10 +123,89 @@ jobs:
           print(f"Regime: {prev_regime} → {curr_regime} | ICEI: {prev_icei:.1f} → {curr_icei:.1f} | alert={should_alert}")
           PYEOF
 
+      # ── Generate Claude summary ───────────────────────────────────────────
+      # Calls Claude Haiku to produce a plain-English analyst briefing from
+      # the CSV outputs. Writes outputs/email_summary.html + .txt.
+      # Skipped silently if ANTHROPIC_API_KEY is not set.
+      - name: Generate Claude summary
+        if: success() && secrets.ANTHROPIC_API_KEY != ''
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OUTPUT_DIR: outputs
+          REGIME_CHANGED: ${{ env.REGIME_CHANGED }}
+          PREV_REGIME: ${{ env.PREV_REGIME }}
+          CURR_REGIME: ${{ env.CURR_REGIME }}
+          ICEI_ALERT: ${{ env.ICEI_ALERT }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: python3 scripts/generate_summary.py
+
+      # ── Send email digest ─────────────────────────────────────────────────
+      # Sends the Claude-generated HTML summary to the MAIL_TO distribution
+      # list. Requires MAIL_SERVER / MAIL_PORT / MAIL_USERNAME / MAIL_PASSWORD
+      # / MAIL_TO secrets. Gmail users: create an App Password at
+      # myaccount.google.com/apppasswords (2FA must be enabled).
+      # MAIL_TO accepts comma-separated addresses:
+      #   you@gmail.com,colleague@firm.com,analyst@hedge.fund
+      - name: Send email digest
+        if: success() && secrets.MAIL_USERNAME != ''
+        env:
+          MAIL_SERVER:   ${{ secrets.MAIL_SERVER }}
+          MAIL_PORT:     ${{ secrets.MAIL_PORT }}
+          MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
+          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+          MAIL_TO:       ${{ secrets.MAIL_TO }}
+          REGIME_CHANGED: ${{ env.REGIME_CHANGED }}
+          CURR_REGIME:   ${{ env.CURR_REGIME }}
+        run: |
+          python3 - <<'PYEOF'
+          import os, smtplib, pathlib
+          from email.mime.multipart import MIMEMultipart
+          from email.mime.text import MIMEText
+          from datetime import date
+
+          today      = date.today().isoformat()
+          server     = os.environ.get("MAIL_SERVER",   "smtp.gmail.com")
+          port       = int(os.environ.get("MAIL_PORT", "465"))
+          username   = os.environ["MAIL_USERNAME"]
+          password   = os.environ["MAIL_PASSWORD"]
+          mail_to    = os.environ["MAIL_TO"]   # comma-separated
+          recipients = [r.strip() for r in mail_to.split(",") if r.strip()]
+
+          regime_changed = os.environ.get("REGIME_CHANGED", "false") == "true"
+          curr_regime    = os.environ.get("CURR_REGIME", "")
+
+          subject_prefix = "⚠️ ALERT — " if regime_changed else ""
+          subject = f"{subject_prefix}Iran Conflict Dashboard — {today} ({curr_regime})"
+
+          html_path = pathlib.Path("outputs/email_summary.html")
+          txt_path  = pathlib.Path("outputs/email_summary.txt")
+
+          if html_path.exists():
+              html_body = html_path.read_text(encoding="utf-8")
+          else:
+              html_body = "<p>Summary unavailable — see run artifacts.</p>"
+
+          txt_body = txt_path.read_text(encoding="utf-8") if txt_path.exists() else "Summary unavailable."
+
+          msg = MIMEMultipart("alternative")
+          msg["Subject"] = subject
+          msg["From"]    = username
+          msg["To"]      = ", ".join(recipients)
+          msg.attach(MIMEText(txt_body,  "plain", "utf-8"))
+          msg.attach(MIMEText(html_body, "html",  "utf-8"))
+
+          print(f"Sending to {len(recipients)} recipient(s) via {server}:{port}...")
+          with smtplib.SMTP_SSL(server, port) as smtp:
+              smtp.login(username, password)
+              smtp.sendmail(username, recipients, msg.as_string())
+          print("Email sent.")
+          PYEOF
+
       # ── Post regime alert as GitHub issue comment ─────────────────────────
       # Uses the built-in GITHUB_TOKEN — no extra secrets needed.
-      # Creates a new issue titled "Dashboard Alerts" if one doesn't exist,
-      # then appends a comment. Watch the issue to receive email notifications.
+      # Creates a 'dashboard-alert' issue if one doesn't exist, then appends
+      # a comment. Watch the issue to receive GitHub email notifications.
       - name: Post regime alert
         if: success() && env.SHOULD_ALERT == 'true'
         env:
@@ -137,17 +215,13 @@ jobs:
           REPO="${{ github.repository }}"
           DATE=$(date -u +%Y-%m-%d)
 
-          # Build alert body
           BODY="## Dashboard Alert — ${DATE}"$'\n\n'
-
           if [ "$REGIME_CHANGED" = "true" ]; then
             BODY+="🔄 **Regime change:** \`${PREV_REGIME}\` → \`${CURR_REGIME}\`"$'\n\n'
           fi
-
           if [ -n "$ICEI_ALERT" ]; then
             BODY+="📊 **ICEI alert:** ${ICEI_ALERT}"$'\n\n'
           fi
-
           BODY+="| Metric | Value |"$'\n'
           BODY+="|---|---|"$'\n'
           BODY+="| Regime | **${CURR_REGIME}** |"$'\n'
@@ -156,7 +230,6 @@ jobs:
           BODY+="| Escalation Score | ${CURR_SCORE} |"$'\n\n'
           BODY+="[Full run artifacts](${RUN_URL})"
 
-          # Find or create the standing alerts issue
           ISSUE_NUM=$(gh issue list --repo "$REPO" \
             --label "dashboard-alert" --state open \
             --json number --jq '.[0].number // empty')
@@ -189,12 +262,13 @@ jobs:
             outputs/conflict_escalation_chart.png
             outputs/escalation_index_chart.png
             outputs/backtest_validation_chart.png
+            outputs/email_summary.html
+            outputs/email_summary.txt
             outputs/executed_notebook.ipynb
           retention-days: 30
 
       # ── Commit latest snapshot back to repo ──────────────────────────────
-      # Keeps a rolling latest-day CSV in the repo so the next run can detect
-      # regime changes by diffing against it.
+      # Keeps a rolling latest-day CSV so the next run can detect regime changes.
       - name: Commit latest snapshot
         if: success()
         run: |
