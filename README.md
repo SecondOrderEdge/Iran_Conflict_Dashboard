@@ -153,7 +153,7 @@ All parameters are set in **Section 3** of the notebook. Key variables:
 | `VALIDATION_START` | `2024-01-01` | Start date for backtest / weight-optimization window |
 | `ENABLE_GDELT` | `True` | Enable/disable GDELT v2 REST API (used only if BigQuery is off or fails) |
 | `ENABLE_BIGQUERY` | `True` | Use BigQuery for GDELT instead of the rate-limited REST API (recommended) |
-| `GCP_PROJECT_ID` | `""` | Your Google Cloud project ID (required when `ENABLE_BIGQUERY = True`) |
+| `GCP_PROJECT_ID` | `""` | **Your own** Google Cloud project ID (required when `ENABLE_BIGQUERY = True`). Each user must supply their own — see GDELT setup below. |
 | `ENABLE_OSINT` | `True` | Enable/disable GitHub-hosted OSINT event database |
 | `ENABLE_WEIGHT_OPTIMIZATION` | `True` | Derive market signal weights via logistic regression on OSINT ground truth |
 | `ENABLE_ACLED` | `False` | Enable/disable ACLED conflict event data |
@@ -183,23 +183,40 @@ ACLED_PASSWORD = "your_acled_api_key"
 
 ### GDELT
 
-The dashboard supports two GDELT access modes, tried in priority order:
+The dashboard supports two GDELT access modes. **Each user must choose one — there are no shared credentials.**
 
-**Option A — BigQuery (recommended, higher reliability)**
+---
 
-The free GDELT v2 REST API is shared infrastructure and rate-limits aggressively. BigQuery gives direct SQL access to the full GDELT dataset with no rate limits and ~15 minute data freshness — the same lag as the REST API.
+#### Option A — BigQuery (recommended)
 
-Setup (one time):
-1. Create a [Google Cloud project](https://console.cloud.google.com/) and enable the BigQuery API
-2. Set `ENABLE_BIGQUERY = True` and `GCP_PROJECT_ID = "your-project-id"` in Section 3
-3. In Colab: a Google sign-in popup appears automatically on first run — no further setup needed
-4. Local: set `GOOGLE_APPLICATION_CREDENTIALS` to the path of a service-account JSON key with the **BigQuery Job User** role
+BigQuery gives direct SQL access to the full GDELT dataset with no rate limits. **Every user needs their own free Google Cloud project.** The repository owner's project cannot be shared — each person brings their own.
 
-The GDELT dataset (`gdelt-bq`) is public — you only need your own project to run queries against it. Query volume for this notebook is well within the 1 TB/month free tier.
+> **Why your own project?** The GDELT dataset is fully public. You are not paying to access the data — you are only paying for the compute to run the query. That cost is effectively zero for this notebook (well within Google's 1 TB/month free tier). There is no way to share this across users without exposing billing credentials, so each user sets up their own in ~10 minutes.
 
-**Option B — REST API + RSS fallback (default, no credentials)**
+**One-time setup per user:**
 
-If `ENABLE_BIGQUERY = False`, the notebook queries the GDELT v2 Doc API. If that is rate-limited (HTTP 429 or empty response), it automatically falls back to RSS-derived keyword signals via `feedparser`. Set `ENABLE_GDELT = False` to skip the REST API entirely and use RSS only.
+1. Go to [console.cloud.google.com](https://console.cloud.google.com/) and sign in with any Google account
+2. Click the project dropdown → **New Project** → name it anything (e.g. `gdelt-dashboard`) → **Create**
+3. Go to **APIs & Services → Enable APIs & Services** → search `BigQuery API` → **Enable**
+4. In Section 3 of the notebook, set:
+   ```python
+   ENABLE_BIGQUERY = True
+   GCP_PROJECT_ID  = "your-project-id"   # ← replace with YOUR project ID, not the repo owner's
+   ```
+5. Run the notebook — a Google sign-in popup appears in Colab on the first run. Click through once and you're done.
+
+> **Important:** `GCP_PROJECT_ID` must be **your own project ID**. Using someone else's project ID will fail with a permissions error. Your project ID is visible in the GCP Console header after you create it.
+
+---
+
+#### Option B — REST API + RSS fallback (no credentials required)
+
+If you do not want to set up a GCP project, set `ENABLE_BIGQUERY = False` in Section 3. The notebook will query the free GDELT v2 REST API instead. This API is rate-limited and shared public infrastructure — it will frequently return empty responses during busy periods, falling back automatically to RSS-derived signals. Signal quality will be lower and less reliable than Option A.
+
+```python
+ENABLE_BIGQUERY = False   # no GCP account needed
+ENABLE_GDELT    = True    # use REST API with RSS fallback
+```
 
 ### OSINT Database
 
