@@ -1,0 +1,209 @@
+name: Daily Dashboard Run
+
+on:
+  schedule:
+    # 06:00 UTC Monday–Friday (markets closed on weekends; no new data)
+    - cron: "0 6 * * 1-5"
+  workflow_dispatch:       # allow manual trigger from the Actions tab
+
+permissions:
+  contents: write          # needed to commit output artifacts back to the repo
+  issues: write            # needed to post regime-change alerts as issue comments
+
+jobs:
+  run-dashboard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      # ── Checkout ───────────────────────────────────────────────────────────
+      - uses: actions/checkout@v4
+
+      # ── Python ────────────────────────────────────────────────────────────
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # ── Dependencies ──────────────────────────────────────────────────────
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install papermill nbconvert ipykernel
+          python -m ipykernel install --user --name python3
+
+      # ── BigQuery credentials (optional) ──────────────────────────────────
+      # To enable BigQuery GDELT, add your GCP service-account JSON as a
+      # repository secret named GCP_SERVICE_ACCOUNT_KEY (Settings → Secrets).
+      # If the secret is absent the workflow falls back to the REST API.
+      - name: Write GCP credentials
+        if: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY != '' }}
+        env:
+          GCP_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+        run: |
+          echo "$GCP_KEY" > /tmp/gcp_key.json
+          echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp_key.json" >> $GITHUB_ENV
+
+      # ── Run notebook with papermill ───────────────────────────────────────
+      - name: Run dashboard notebook
+        env:
+          ENABLE_BIGQUERY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY != '' && 'True' || 'False' }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        run: |
+          mkdir -p outputs
+          papermill \
+            conflict_escalation_dashboard_ml_pdf_v5.ipynb \
+            outputs/executed_notebook.ipynb \
+            -p USE_DRIVE False \
+            -p OUTPUT_DIR "outputs/" \
+            --kernel python3 \
+            --execution-timeout 1200 \
+            --report-mode
+
+      # ── Detect regime change and build alert payload ──────────────────────
+      # Compares today's regime/ICEI against the last committed snapshot in
+      # latest/conflict_dashboard_latest.csv.  Writes alert metadata to
+      # outputs/alert.env so downstream steps can branch on it.
+      - name: Detect regime change
+        if: success()
+        run: |
+          python3 - <<'PYEOF'
+          import csv, os, pathlib
+
+          def read_latest(path):
+              try:
+                  with open(path) as f:
+                      rows = list(csv.DictReader(f))
+                  return rows[0] if rows else {}
+              except FileNotFoundError:
+                  return {}
+
+          prev = read_latest("latest/conflict_dashboard_latest.csv")
+          curr = read_latest("outputs/conflict_dashboard_latest.csv")
+
+          prev_regime = prev.get("portfolio_regime", "unknown")
+          curr_regime = curr.get("portfolio_regime", "unknown")
+
+          def safe_float(d, k):
+              try: return float(d.get(k, "nan"))
+              except: return float("nan")
+
+          prev_icei = safe_float(prev, "icei")
+          curr_icei = safe_float(curr, "icei")
+          curr_p_esc = safe_float(curr, "p_escalation")
+          curr_score = safe_float(curr, "escalation_score")
+
+          regime_changed = (prev_regime != curr_regime and prev_regime != "unknown")
+
+          # ICEI threshold alerts: crossing 70 (elevated) or 30 (low pressure)
+          icei_alert = ""
+          if not (curr_icei != curr_icei):  # not NaN
+              if not (prev_icei != prev_icei):
+                  if prev_icei < 70 <= curr_icei:
+                      icei_alert = f"ICEI crossed above 70 ({curr_icei:.1f}) — elevated escalation territory"
+                  elif prev_icei >= 70 > curr_icei:
+                      icei_alert = f"ICEI dropped below 70 ({curr_icei:.1f}) — leaving elevated territory"
+                  elif prev_icei > 30 >= curr_icei:
+                      icei_alert = f"ICEI dropped below 30 ({curr_icei:.1f}) — low-pressure territory"
+                  elif prev_icei <= 30 < curr_icei:
+                      icei_alert = f"ICEI crossed above 30 ({curr_icei:.1f}) — leaving low-pressure territory"
+
+          should_alert = regime_changed or bool(icei_alert)
+
+          env_file = os.environ["GITHUB_ENV"]
+          with open(env_file, "a") as f:
+              f.write(f"REGIME_CHANGED={'true' if regime_changed else 'false'}\n")
+              f.write(f"SHOULD_ALERT={'true' if should_alert else 'false'}\n")
+              f.write(f"PREV_REGIME={prev_regime}\n")
+              f.write(f"CURR_REGIME={curr_regime}\n")
+              f.write(f"CURR_ICEI={curr_icei:.1f}\n")
+              f.write(f"CURR_P_ESC={curr_p_esc:.3f}\n")
+              f.write(f"CURR_SCORE={curr_score:.3f}\n")
+              f.write(f"ICEI_ALERT={icei_alert}\n")
+
+          print(f"Regime: {prev_regime} → {curr_regime} | ICEI: {prev_icei:.1f} → {curr_icei:.1f} | alert={should_alert}")
+          PYEOF
+
+      # ── Post regime alert as GitHub issue comment ─────────────────────────
+      # Uses the built-in GITHUB_TOKEN — no extra secrets needed.
+      # Creates a new issue titled "Dashboard Alerts" if one doesn't exist,
+      # then appends a comment. Watch the issue to receive email notifications.
+      - name: Post regime alert
+        if: success() && env.SHOULD_ALERT == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          REPO="${{ github.repository }}"
+          DATE=$(date -u +%Y-%m-%d)
+
+          # Build alert body
+          BODY="## Dashboard Alert — ${DATE}"$'\n\n'
+
+          if [ "$REGIME_CHANGED" = "true" ]; then
+            BODY+="🔄 **Regime change:** \`${PREV_REGIME}\` → \`${CURR_REGIME}\`"$'\n\n'
+          fi
+
+          if [ -n "$ICEI_ALERT" ]; then
+            BODY+="📊 **ICEI alert:** ${ICEI_ALERT}"$'\n\n'
+          fi
+
+          BODY+="| Metric | Value |"$'\n'
+          BODY+="|---|---|"$'\n'
+          BODY+="| Regime | **${CURR_REGIME}** |"$'\n'
+          BODY+="| ICEI | ${CURR_ICEI} |"$'\n'
+          BODY+="| P(Escalation) | ${CURR_P_ESC} |"$'\n'
+          BODY+="| Escalation Score | ${CURR_SCORE} |"$'\n\n'
+          BODY+="[Full run artifacts](${RUN_URL})"
+
+          # Find or create the standing alerts issue
+          ISSUE_NUM=$(gh issue list --repo "$REPO" \
+            --label "dashboard-alert" --state open \
+            --json number --jq '.[0].number // empty')
+
+          if [ -z "$ISSUE_NUM" ]; then
+            ISSUE_NUM=$(gh issue create \
+              --repo "$REPO" \
+              --title "Iran Conflict Dashboard — Regime & ICEI Alerts" \
+              --label "dashboard-alert" \
+              --body "This issue is automatically maintained by the daily dashboard workflow. Subscribe (**Watch → Custom → Issues**) to receive email notifications on regime changes and ICEI threshold crossings." \
+              --json number --jq '.number')
+            echo "Created alert issue #${ISSUE_NUM}"
+          fi
+
+          gh issue comment "$ISSUE_NUM" --repo "$REPO" --body "$BODY"
+          echo "Posted alert to issue #${ISSUE_NUM}"
+
+      # ── Upload artifacts ──────────────────────────────────────────────────
+      - name: Upload outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-outputs-${{ github.run_id }}
+          path: |
+            outputs/conflict_dashboard_report.pdf
+            outputs/conflict_escalation_dashboard_output.csv
+            outputs/conflict_dashboard_latest.csv
+            outputs/escalation_index_history.csv
+            outputs/data_availability_summary.csv
+            outputs/conflict_escalation_chart.png
+            outputs/escalation_index_chart.png
+            outputs/backtest_validation_chart.png
+            outputs/executed_notebook.ipynb
+          retention-days: 30
+
+      # ── Commit latest snapshot back to repo ──────────────────────────────
+      # Keeps a rolling latest-day CSV in the repo so the next run can detect
+      # regime changes by diffing against it.
+      - name: Commit latest snapshot
+        if: success()
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          mkdir -p latest
+          cp outputs/conflict_dashboard_latest.csv  latest/ 2>/dev/null || true
+          cp outputs/data_availability_summary.csv  latest/ 2>/dev/null || true
+          cp outputs/conflict_escalation_chart.png  latest/ 2>/dev/null || true
+          git add latest/
+          git diff --cached --quiet || git commit -m "chore: daily dashboard snapshot $(date -u +%Y-%m-%d)"
+          git push

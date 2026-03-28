@@ -15,6 +15,7 @@ A **quantitative geopolitical risk dashboard** that combines financial market si
 
 - [Overview](#overview)
 - [Key Features](#key-features)
+- [Scheduled Execution (GitHub Actions)](#scheduled-execution-github-actions)
 - [Quick Start (Google Colab)](#quick-start-google-colab)
 - [Local Installation](#local-installation)
 - [Configuration](#configuration)
@@ -73,8 +74,10 @@ Both outputs are combined to generate a **portfolio regime recommendation** — 
 - **Sub-sector regime guidance** — Regime recommendations broken to sub-sector level (upstream E&P, midstream, refining, defense primes, defense services) rather than generic ETF direction.
 - **OSINT lead/lag validation** — Cross-correlation of OSINT operation days vs. market escalation score at lags −10 to +10 days. Result is typically near-coincident (lag=0 ± a few days); supports use as a real-time monitoring framework rather than a standalone timing signal.
 - **Iran Conflict Escalation Index (ICEI)** — A 0–100 index mapped from the raw escalation score, with bootstrap confidence intervals from the last 30 trading days. Interpretive range guide in the PDF: 0–30 low pressure, 30–50 below-neutral, 50–70 mixed/stabilization, 70+ elevated escalation.
+- **Walk-forward out-of-sample backtest** — A rolling evaluation where the model is tested on held-out 1-month windows it never trained on, giving a true out-of-sample AUC separate from the in-sample weight-optimization AUC. Both AUCs are reported in the validation metrics table.
 - **Backtest validation** — ROC-AUC computed on the full market signal layer vs. OSINT-verified operation days (non-circular).
 - **Signal Coverage** — Tracks the fraction of core signal families currently returning live data; displayed in the dashboard output as "Signal Coverage" (data availability, not forecast certainty).
+- **Regime-change alerting** — The GitHub Actions daily run detects when the regime flips (e.g. Stabilization → Escalation) or when ICEI crosses key thresholds (30 / 70), and posts an alert comment to a pinned GitHub issue. Subscribe to the issue to receive email notifications.
 - **Data availability dashboard** — Real-time layer status (Live / Partial / Down) for market, news, and event data sources.
 - **Crypto risk-off signal** — Bitcoin price action added as an additional cross-asset risk indicator.
 - **Softmax probability outputs** — Smooth probability distributions rather than hard threshold triggers.
@@ -85,6 +88,52 @@ Both outputs are combined to generate a **portfolio regime recommendation** — 
 - **Google Drive persistence** — All outputs (PDF, CSVs, charts) are written to a `IranDashboard/` folder in your Google Drive so they survive Colab runtime disconnects. Uses the same Google auth as BigQuery — no extra credentials required. Controlled by `USE_DRIVE` in Section 2b.
 - **Colab-native** — Designed to run top-to-bottom in Google Colab with no local setup required.
 - **Exponential backoff** — Robust HTTP retry logic for GDELT queries in shared runtime environments.
+
+---
+
+## Scheduled Execution (GitHub Actions)
+
+A `.github/workflows/daily_run.yml` workflow runs the dashboard automatically at **06:00 UTC, Monday–Friday** and saves outputs as downloadable GitHub Actions artifacts (retained for 30 days). It can also be triggered manually from the **Actions** tab.
+
+### What it does
+
+- Executes the notebook headlessly via [papermill](https://papermill.readthedocs.io/)
+- Falls back to GDELT REST API + RSS if no BigQuery credentials are configured
+- Uploads the PDF report, CSVs, and charts as a run artifact
+- Commits a lightweight `latest/` snapshot (latest-day CSV + chart) back to the repo
+
+### Setup (5 minutes)
+
+1. Fork or clone this repository to your own GitHub account
+2. Go to **Settings → Secrets and variables → Actions → New repository secret**
+3. Add the following secrets (both optional — the workflow runs without them using the REST API fallback):
+
+| Secret | Value | Purpose |
+|---|---|---|
+| `GCP_SERVICE_ACCOUNT_KEY` | JSON contents of a GCP service account key | Enables BigQuery GDELT (higher quality) |
+| `GCP_PROJECT_ID` | Your GCP project ID (e.g. `gdelt-dashboard`) | Required alongside the key above |
+
+> **Creating a service account key:** In the GCP Console, go to **IAM & Admin → Service Accounts → Create Service Account**, grant it the `BigQuery Job User` and `BigQuery Data Viewer` roles on the `gdelt-bq` project, then create a JSON key. Paste the full JSON as the `GCP_SERVICE_ACCOUNT_KEY` secret.
+
+4. Push any change to `main` (or trigger manually) — the Actions tab will show the run.
+
+### Running locally with papermill
+
+```bash
+pip install papermill ipykernel
+python -m ipykernel install --user --name python3
+
+# Without BigQuery (REST API fallback):
+papermill conflict_escalation_dashboard_ml_pdf_v5.ipynb output.ipynb \
+  -p USE_DRIVE False -p OUTPUT_DIR outputs/ \
+  -p ENABLE_BIGQUERY False
+
+# With BigQuery (service account via env var):
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json
+papermill conflict_escalation_dashboard_ml_pdf_v5.ipynb output.ipynb \
+  -p USE_DRIVE False -p OUTPUT_DIR outputs/ \
+  -p ENABLE_BIGQUERY True -p GCP_PROJECT_ID your-project-id
+```
 
 ---
 

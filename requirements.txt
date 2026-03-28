@@ -16,3 +16,5 @@ kaleido>=0.2.1
 scipy>=1.9.0
 scikit-learn>=1.2.0
 feedparser>=6.0.8
+google-cloud-bigquery>=3.11.0
+db-dtypes>=1.1.0
