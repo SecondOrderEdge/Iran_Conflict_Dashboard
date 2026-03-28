@@ -48,7 +48,13 @@ def read_csv_all_rows(path):
     except FileNotFoundError:
         return []
 
-latest   = read_csv_first_row(OUTPUT_DIR / "conflict_dashboard_latest.csv")
+latest_path = OUTPUT_DIR / "conflict_dashboard_latest.csv"
+if not latest_path.exists():
+    print(f"ERROR: {latest_path} not found — did the notebook run complete successfully?")
+    print(f"Contents of {OUTPUT_DIR}: {list(OUTPUT_DIR.iterdir()) if OUTPUT_DIR.exists() else 'directory missing'}")
+    sys.exit(1)
+
+latest   = read_csv_first_row(latest_path)
 avail    = read_csv_all_rows(OUTPUT_DIR / "data_availability_summary.csv")
 icei_hist = read_csv_all_rows(OUTPUT_DIR / "escalation_index_history.csv")
 
@@ -224,7 +230,7 @@ metrics_table = f"""
   <tr><td style="padding:5px 10px;border:1px solid #E5E7EB;">Portfolio Regime</td>
       <td style="padding:5px 10px;border:1px solid #E5E7EB;text-align:right;"><strong>{regime}</strong></td></tr>
   <tr style="background:#F9FAFB;"><td style="padding:5px 10px;border:1px solid #E5E7EB;">ICEI</td>
-      <td style="padding:5px 10px;border:1px solid #E5E7EB;text-align:right;">{icei} / 100 ({icei_delta:+} vs prev)</td></tr>
+      <td style="padding:5px 10px;border:1px solid #E5E7EB;text-align:right;">{icei} / 100 ({icei_delta} vs prev)</td></tr>
   <tr><td style="padding:5px 10px;border:1px solid #E5E7EB;">P(Escalation)</td>
       <td style="padding:5px 10px;border:1px solid #E5E7EB;text-align:right;">{p_esc}</td></tr>
   <tr style="background:#F9FAFB;"><td style="padding:5px 10px;border:1px solid #E5E7EB;">P(Stabilization)</td>
