@@ -14,6 +14,10 @@ jobs:
   run-dashboard:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      HAS_GCP_KEY:   ${{ secrets.GCP_SERVICE_ACCOUNT_KEY != '' }}
+      HAS_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+      HAS_MAIL:      ${{ secrets.MAIL_USERNAME != '' }}
 
     steps:
       # ── Checkout ───────────────────────────────────────────────────────────
@@ -37,7 +41,7 @@ jobs:
       # repository secret named GCP_SERVICE_ACCOUNT_KEY (Settings → Secrets).
       # If the secret is absent the workflow falls back to the REST API.
       - name: Write GCP credentials
-        if: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY != '' }}
+        if: env.HAS_GCP_KEY == 'true'
         env:
           GCP_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
         run: |
@@ -47,7 +51,7 @@ jobs:
       # ── Run notebook with papermill ───────────────────────────────────────
       - name: Run dashboard notebook
         env:
-          ENABLE_BIGQUERY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY != '' && 'True' || 'False' }}
+          ENABLE_BIGQUERY: ${{ env.HAS_GCP_KEY == 'true' && 'True' || 'False' }}
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID || 'iran-conflict-dashboard' }}
         run: |
           mkdir -p outputs
@@ -128,7 +132,7 @@ jobs:
       # the CSV outputs. Writes outputs/email_summary.html + .txt.
       # Skipped silently if ANTHROPIC_API_KEY is not set.
       - name: Generate Claude summary
-        if: success() && secrets.ANTHROPIC_API_KEY != ''
+        if: success() && env.HAS_ANTHROPIC == 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OUTPUT_DIR: outputs
@@ -148,7 +152,7 @@ jobs:
       # MAIL_TO accepts comma-separated addresses:
       #   you@gmail.com,colleague@firm.com,analyst@hedge.fund
       - name: Send email digest
-        if: success() && secrets.MAIL_USERNAME != ''
+        if: success() && env.HAS_MAIL == 'true'
         env:
           MAIL_SERVER:   ${{ secrets.MAIL_SERVER }}
           MAIL_PORT:     ${{ secrets.MAIL_PORT }}
