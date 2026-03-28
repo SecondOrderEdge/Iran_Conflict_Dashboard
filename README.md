@@ -106,16 +106,37 @@ A `.github/workflows/daily_run.yml` workflow runs the dashboard automatically at
 
 1. Fork or clone this repository to your own GitHub account
 2. Go to **Settings → Secrets and variables → Actions → New repository secret**
-3. Add the following secrets (both optional — the workflow runs without them using the REST API fallback):
+3. Add the following secrets:
+
+**Required for email digest:**
 
 | Secret | Value | Purpose |
 |---|---|---|
-| `GCP_SERVICE_ACCOUNT_KEY` | JSON contents of a GCP service account key | Enables BigQuery GDELT (higher quality) |
-| `GCP_PROJECT_ID` | Your GCP project ID (e.g. `gdelt-dashboard`) | Required alongside the key above |
+| `ANTHROPIC_API_KEY` | `sk-ant-...` | Claude generates the plain-English briefing |
+| `MAIL_USERNAME` | `you@gmail.com` | Sender address (Gmail recommended) |
+| `MAIL_PASSWORD` | 16-char app password | Gmail: [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) (requires 2FA) |
+| `MAIL_TO` | `you@gmail.com,colleague@firm.com` | Comma-separated distribution list — everyone here gets every daily email |
+| `MAIL_SERVER` | `smtp.gmail.com` | SMTP server (default: Gmail) |
+| `MAIL_PORT` | `465` | SMTP port (default: 465 SSL) |
+
+**Optional — for BigQuery GDELT (higher signal quality):**
+
+| Secret | Value | Purpose |
+|---|---|---|
+| `GCP_SERVICE_ACCOUNT_KEY` | JSON contents of a GCP service account key | Enables BigQuery GDELT |
+| `GCP_PROJECT_ID` | Your GCP project ID | Required alongside the key above |
 
 > **Creating a service account key:** In the GCP Console, go to **IAM & Admin → Service Accounts → Create Service Account**, grant it the `BigQuery Job User` and `BigQuery Data Viewer` roles on the `gdelt-bq` project, then create a JSON key. Paste the full JSON as the `GCP_SERVICE_ACCOUNT_KEY` secret.
 
-4. Push any change to `main` (or trigger manually) — the Actions tab will show the run.
+4. Push any change to `main` (or trigger manually from the Actions tab) — the workflow will run, generate a Claude summary, and email the distribution list.
+
+**What the daily email contains:**
+- A 250–350 word plain-English analyst briefing written by Claude, interpreting the regime, ICEI reading, probability split, and positioning implications
+- A key metrics table (Regime, ICEI, P(Escalation), Escalation Score, Signal Coverage)
+- Subject line is prefixed `⚠️ ALERT —` on regime-change days
+- A link to the full PDF report and chart artifacts in GitHub Actions
+
+**Distribution list management:** Edit the `MAIL_TO` secret to add or remove addresses. No code changes needed — just comma-separate the addresses.
 
 ### Running locally with papermill
 
