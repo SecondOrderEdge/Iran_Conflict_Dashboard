@@ -48,7 +48,7 @@ jobs:
       - name: Run dashboard notebook
         env:
           ENABLE_BIGQUERY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY != '' && 'True' || 'False' }}
-          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID || 'iran-conflict-dashboard' }}
         run: |
           mkdir -p outputs
           papermill \
