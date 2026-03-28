@@ -7,8 +7,11 @@ on:
   workflow_dispatch:       # allow manual trigger from the Actions tab
 
 permissions:
-  contents: write          # needed to commit output artifacts back to the repo
-  issues: write            # needed to post regime-change alerts as issue comments
+  contents: write
+  issues: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true  # opt into Node 24 ahead of June 2026 forced migration
 
 jobs:
   run-dashboard:
@@ -50,9 +53,6 @@ jobs:
 
       # ── Run notebook with papermill ───────────────────────────────────────
       - name: Run dashboard notebook
-        env:
-          ENABLE_BIGQUERY: ${{ env.HAS_GCP_KEY == 'true' && 'True' || 'False' }}
-          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID || 'iran-conflict-dashboard' }}
         run: |
           mkdir -p outputs
           papermill \
@@ -60,6 +60,8 @@ jobs:
             outputs/executed_notebook.ipynb \
             -p USE_DRIVE False \
             -p OUTPUT_DIR "outputs/" \
+            -p ENABLE_BIGQUERY ${{ env.HAS_GCP_KEY == 'true' && 'True' || 'False' }} \
+            -p GCP_PROJECT_ID "${{ secrets.GCP_PROJECT_ID || 'iran-conflict-dashboard' }}" \
             --kernel python3 \
             --execution-timeout 1200 \
             --report-mode
