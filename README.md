@@ -74,8 +74,10 @@ Both outputs are combined to generate a **portfolio regime recommendation** — 
 - **Sub-sector regime guidance** — Regime recommendations broken to sub-sector level (upstream E&P, midstream, refining, defense primes, defense services) rather than generic ETF direction.
 - **OSINT lead/lag validation** — Cross-correlation of OSINT operation days vs. market escalation score at lags −10 to +10 days. Result is typically near-coincident (lag=0 ± a few days); supports use as a real-time monitoring framework rather than a standalone timing signal.
 - **Iran Conflict Escalation Index (ICEI)** — A 0–100 index mapped from the raw escalation score, with bootstrap confidence intervals from the last 30 trading days. Interpretive range guide in the PDF: 0–30 low pressure, 30–50 below-neutral, 50–70 mixed/stabilization, 70+ elevated escalation.
+- **Walk-forward out-of-sample backtest** — A rolling evaluation where the model is tested on held-out 1-month windows it never trained on, giving a true out-of-sample AUC separate from the in-sample weight-optimization AUC. Both AUCs are reported in the validation metrics table.
 - **Backtest validation** — ROC-AUC computed on the full market signal layer vs. OSINT-verified operation days (non-circular).
 - **Signal Coverage** — Tracks the fraction of core signal families currently returning live data; displayed in the dashboard output as "Signal Coverage" (data availability, not forecast certainty).
+- **Regime-change alerting** — The GitHub Actions daily run detects when the regime flips (e.g. Stabilization → Escalation) or when ICEI crosses key thresholds (30 / 70), and posts an alert comment to a pinned GitHub issue. Subscribe to the issue to receive email notifications.
 - **Data availability dashboard** — Real-time layer status (Live / Partial / Down) for market, news, and event data sources.
 - **Crypto risk-off signal** — Bitcoin price action added as an additional cross-asset risk indicator.
 - **Softmax probability outputs** — Smooth probability distributions rather than hard threshold triggers.
