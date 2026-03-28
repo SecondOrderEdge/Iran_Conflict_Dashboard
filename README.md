@@ -68,10 +68,10 @@ Both outputs are combined to generate a **portfolio regime recommendation** — 
 - **Temporal ML holdout** — The Random Forest enforces a strict 60-day train/test split and reports holdout ROC-AUC separately, so overfitting on thin event history is visible rather than hidden.
 - **Empirical weight optimization** — Market signal weights are derived from logistic regression on OSINT ground truth, replacing circular heuristic weighting.
 - **Causal / confirming signal taxonomy** — Signals are tagged as `causal` (drive the escalation score and regime trigger) or `confirming` (market-return based, shown as a separate corroboration layer). This breaks the XLE → overweight XLE circular reference.
-- **20-signal composite model** — Weighted, z-scored, and normalized across market, crypto, news, event, and physical-market dimensions.
+- **26-signal composite model** — Weighted, z-scored, and normalized across market, crypto, news, event, and physical-market dimensions.
 - **Physical Hormuz signals** — Tanker-equity basket (FRO / STNG / DHT) and Brent-WTI spread added as forward-looking physical market proxies for Strait of Hormuz stress, supplementing GDELT tone signals.
 - **Sub-sector regime guidance** — Regime recommendations broken to sub-sector level (upstream E&P, midstream, refining, defense primes, defense services) rather than generic ETF direction.
-- **OSINT lead/lag validation** — Cross-correlation of OSINT operation days vs. market escalation score at lags −10 to +10 days. Result is typically coincident (lag=0); supports use as a real-time monitoring framework rather than a standalone timing signal.
+- **OSINT lead/lag validation** — Cross-correlation of OSINT operation days vs. market escalation score at lags −10 to +10 days. Result is typically near-coincident (lag=0 ± a few days); supports use as a real-time monitoring framework rather than a standalone timing signal.
 - **Iran Conflict Escalation Index (ICEI)** — A 0–100 index mapped from the raw escalation score, with bootstrap confidence intervals from the last 30 trading days. Interpretive range guide in the PDF: 0–30 low pressure, 30–50 below-neutral, 50–70 mixed/stabilization, 70+ elevated escalation.
 - **Backtest validation** — ROC-AUC computed on the full market signal layer vs. OSINT-verified operation days (non-circular).
 - **Signal Coverage** — Tracks the fraction of core signal families currently returning live data; displayed in the dashboard output as "Signal Coverage" (data availability, not forecast certainty).
@@ -82,6 +82,7 @@ Both outputs are combined to generate a **portfolio regime recommendation** — 
 - **Regime Change Triggers** — The PDF includes a model-native table of conditions that would argue for a regime reassessment (e.g. sustained ICEI above 70, P(Escalation) exceeding P(Stabilization) for consecutive runs). Thresholds are directional guides, not calibrated confidence bounds.
 - **CSV exports** — Full historical timeseries, latest-day snapshot, ICEI history, and data availability summary for downstream analysis.
 - **Interactive charts** — Plotly-based visualizations for exploration in Colab/Jupyter.
+- **Google Drive persistence** — All outputs (PDF, CSVs, charts) are written to a `IranDashboard/` folder in your Google Drive so they survive Colab runtime disconnects. Uses the same Google auth as BigQuery — no extra credentials required. Controlled by `USE_DRIVE` in Section 2b.
 - **Colab-native** — Designed to run top-to-bottom in Google Colab with no local setup required.
 - **Exponential backoff** — Robust HTTP retry logic for GDELT queries in shared runtime environments.
 
@@ -106,7 +107,9 @@ The fastest way to run this dashboard is directly in Google Colab — no install
    - Generate the ICEI with bootstrap confidence intervals
    - Generate and save a PDF report + CSV exports
 
-4. Download output files from the Colab file browser (left sidebar → Files icon).
+4. **First run:** Two Google sign-in popups will appear — one for Google Drive (Section 2b) and one for BigQuery (Section 5). Click through both with the same Google account. After that, outputs are saved automatically to **My Drive → IranDashboard/**.
+
+> **Tip:** Because outputs persist to Google Drive, you do not need to download files immediately. They will be waiting for you in your Drive after any runtime disconnect.
 
 > **ACLED (optional):** If you want ground-truth conflict event data, set your ACLED credentials before running Section 7. See [Configuration](#configuration).
 
@@ -146,8 +149,10 @@ All parameters are set in **Section 3** of the notebook. Key variables:
 
 | Variable | Default | Description |
 |---|---|---|
+| `USE_DRIVE` | `True` | Persist all outputs to Google Drive (survives Colab disconnects). Set `False` to write to the local Colab filesystem instead. |
+| `DRIVE_FOLDER` | `IranDashboard` | Folder name inside **My Drive** where all outputs are saved. Created automatically on first run. |
 | `LOOKBACK_DAYS` | `90` | Days of market history to display |
-| `WARMUP_DAYS` | `60` | Pre-calculation buffer for rolling indicators |
+| `WARMUP_DAYS` | `120` | Pre-calculation buffer for rolling indicators. Set to 120 to support 120-day level signals. |
 | `NEWS_LOOKBACK_DAYS` | `30` | Days of GDELT news history |
 | `N_BOOTSTRAP` | `500` | Bootstrap resamples for ICEI confidence intervals |
 | `VALIDATION_START` | `2024-01-01` | Start date for backtest / weight-optimization window |
@@ -241,7 +246,7 @@ The OSINT layer pulls a public SQLite database of OSINT-verified Iran-Israel ope
                               │
                      build_indicator_table()
                               │
-                     build_signal_table()   ← 18 normalized signals
+                     build_signal_table()   ← 26 normalized signals
                               │
               ┌───────────────┴───────────────┐
               │  Heuristic weighted score     │
@@ -261,15 +266,16 @@ The OSINT layer pulls a public SQLite database of OSINT-verified Iran-Israel ope
 
 ### Signal Construction
 
-The `build_signal_table()` function converts raw indicators into **20 normalized signals**, each clipped to the range `[-1, +1]` via rolling z-scores. Signals are tagged as **causal** (drive the escalation score) or **confirming** (market-return based; shown as a corroboration layer only):
+The `build_signal_table()` function converts raw indicators into **26 normalized signals**, each clipped to the range `[-1, +1]` via rolling z-scores. Signals are tagged as **causal** (drive the escalation score) or **confirming** (market-return based; shown as a corroboration layer only):
 
-1. **Market level signals** *(causal)* — Brent crude, natural gas, and VIX vs. a 60-day rolling baseline
-2. **News volume signals** *(causal)* — GDELT / RSS article count z-scores
-3. **News tone signals** *(causal)* — GDELT / RSS sentiment scores, inverted (more negative = more escalation)
-4. **Physical Hormuz signals** *(causal)* — Tanker-equity basket (FRO/STNG/DHT 5-day return) and Brent-WTI spread, both z-scored; these lead GDELT tone by 1–3 days because tanker equities trade on forward fixture expectations
-5. **OSINT event signals** *(causal)* — Munitions-use count and air-defense failure rate from the OSINT database, z-scored
-6. **Relative performance signals** *(confirming)* — Energy and defense sectors vs. S&P 500; displayed separately and excluded from regime trigger to avoid circularity
-7. **Crypto / credit / bond stress signals** *(confirming)* — BTC, HYG, TLT; lagging cross-asset risk-off indicators
+1. **Market shock signals** *(causal)* — Brent crude, natural gas, and VIX vs. a **60-day** rolling baseline; react to acute price moves
+2. **Market level signals** *(causal)* — The same three commodities/VIX vs. a **120-day** rolling baseline; capture persistent elevated risk that the shorter z-score would absorb as a new normal
+3. **News volume signals** *(causal)* — GDELT / RSS article count z-scores for conflict, Hormuz, proxy attacks, Iran instability, troop deployments, nuclear threats, and sanctions
+4. **News tone signals** *(causal)* — GDELT / RSS sentiment scores, inverted (more negative = more escalation)
+5. **Physical Hormuz signals** *(causal)* — Tanker-equity basket (FRO/STNG/DHT 5-day return) and Brent-WTI spread, both z-scored; these lead GDELT tone by 1–3 days because tanker equities trade on forward fixture expectations
+6. **OSINT event signals** *(causal)* — Munitions-use count and air-defense failure rate from the OSINT database, z-scored (weight reduced to reflect sparsity — typically 15/90 active days)
+7. **Relative performance signals** *(confirming)* — Energy and defense sectors vs. S&P 500; displayed separately and excluded from regime trigger to avoid circularity
+8. **Crypto / credit / bond stress signals** *(confirming)* — BTC, HYG, TLT; lagging cross-asset risk-off indicators
 
 ### Escalation Model
 
@@ -297,9 +303,9 @@ The ICEI maps the raw escalation score to a **0–100 scale** with three compone
 
 | Component | Budget |
 |---|---|
-| OSINT / Events | 47.1% |
-| Negative Sentiment | 23.5% |
-| Market / Active Conflict | 29.4% |
+| OSINT / Events | 20% |
+| Negative Sentiment | 35% |
+| Market / Active Conflict | 30% |
 
 A **500-sample bootstrap** (configurable via `N_BOOTSTRAP`) over the last 30 trading days produces confidence intervals around the current ICEI reading. The ICEI history is exported to `escalation_index_history.csv` and charted in `escalation_index_chart.png`.
 
@@ -339,30 +345,63 @@ The regime trigger uses **causal signals only** (news, OSINT, VIX, commodity lev
 
 Signals are tagged **causal** (drive escalation score and regime trigger) or **confirming** (market-return based; corroboration layer only — not used to trigger regime).
 
+**Market shock signals** (60-day rolling z-score — react to acute moves):
+
 | Signal | Weight | Role | Source | Description |
 |---|---|---|---|---|
-| `conflict_news` | 8% | causal | GDELT / RSS | Iran/Israel conflict article volume, z-scored |
-| `ceasefire_signal` | 10% | causal | GDELT / RSS | Ceasefire/negotiation volume, **inverted** |
-| `hormuz_news` | 8% | causal | GDELT / RSS | Strait of Hormuz disruption article volume, z-scored |
-| `vol_shock` | 8% | causal | yfinance ^VIX | VIX price level, 60-day rolling z-score |
-| `conflict_tone_neg` | 8% | causal | GDELT / RSS | Iran/Israel conflict tone, **inverted** |
-| `proxy_news` | 8% | causal | GDELT / RSS | Proxy attack article volume, z-scored |
-| `oil_shock` | 7% | causal | yfinance BZ=F | Brent crude price level, 60-day rolling z-score |
-| `acled_events` | 4% | causal | ACLED | Ground-truth event count, z-scored (0 if disabled) |
-| `osint_munitions` | 4% | causal | OSINT DB | OSINT-verified munitions/operations count, z-scored |
-| `osint_intercept_fail` | 3% | causal | OSINT DB | OSINT air-defense failure rate, z-scored |
-| `gas_shock` | 6% | causal | yfinance NG=F | Natural gas price level, 60-day rolling z-score |
-| `hormuz_tone_neg` | 3% | causal | GDELT / RSS | Hormuz news tone, **inverted** (reduced from 6%; physical proxies added) |
-| `tanker_stress` | 2% | causal | yfinance FRO/STNG/DHT | Equal-weight tanker-equity basket 5-day return, z-scored; leads GDELT tone by 1–3 days |
-| `brent_wti_spread` | 1% | causal | yfinance BZ=F / CL=F | Brent minus WTI spread, 60-day z-score; positive = Middle East supply-risk premium building |
-| `iran_instability` | 5% | causal | GDELT / RSS | Iran internal instability article volume, z-scored |
-| `energy_rel` | 4% | **confirming** | yfinance XLE/SPY | XLE 5-day return minus SPY — corroboration only |
-| `defense_rel` | 3% | **confirming** | yfinance ITA/SPY | ITA 5-day return minus SPY — corroboration only |
-| `crypto_risk_off` | 5% | **confirming** | yfinance BTC-USD | BTC 5-day % change, **inverted** — corroboration only |
-| `bond_stress` | 2% | **confirming** | yfinance TLT | TLT 5-day % change, **inverted** — corroboration only |
-| `credit_stress` | 1% | **confirming** | yfinance HYG | HYG 5-day % change, **inverted** — corroboration only |
+| `vol_shock` | 7% | causal | yfinance ^VIX | VIX price level, 60-day rolling z-score |
+| `oil_shock` | 6% | causal | yfinance BZ=F | Brent crude price level, 60-day rolling z-score |
+| `gas_shock` | 5% | causal | yfinance NG=F | Natural gas price level, 60-day rolling z-score |
 
-Weights sum to 1.0. Causal signal weights are renormalized to 1.0 for the escalation score; confirming weights apply only to the separate confirming composite. If `ENABLE_WEIGHT_OPTIMIZATION = True`, market-component weights are replaced by logistic-regression-derived values at runtime.
+**Market level signals** (120-day rolling z-score — capture persistent elevated risk that 60-day z-scores absorb as baseline):
+
+| Signal | Weight | Role | Source | Description |
+|---|---|---|---|---|
+| `oil_level` | 3% | causal | yfinance BZ=F | Brent crude price level vs. 120-day baseline |
+| `gas_level` | 2% | causal | yfinance NG=F | Natural gas price level vs. 120-day baseline |
+| `vol_level` | 1% | causal | yfinance ^VIX | VIX level vs. 120-day baseline |
+
+**News / sentiment signals** (via BigQuery GKG → REST API → RSS fallback):
+
+| Signal | Weight | Role | Source | Description |
+|---|---|---|---|---|
+| `conflict_news` | 7% | causal | GDELT / RSS | Iran/Israel conflict article volume, z-scored |
+| `proxy_news` | 7% | causal | GDELT / RSS | Proxy attack article volume, z-scored |
+| `conflict_tone_neg` | 7% | causal | GDELT / RSS | Iran/Israel conflict tone, **inverted** |
+| `ceasefire_signal` | 7% | causal | GDELT / RSS | Ceasefire/negotiation volume, **inverted** |
+| `hormuz_news` | 6% | causal | GDELT / RSS | Strait of Hormuz disruption article volume, z-scored |
+| `troop_deployment` | 6% | causal | GDELT BigQuery | Troop movement / deployment article volume, z-scored |
+| `iran_instability` | 4% | causal | GDELT / RSS | Iran internal instability article volume, z-scored |
+| `nuclear_volume` | 5% | causal | GDELT BigQuery | Nuclear / WMD escalation article volume, z-scored |
+| `sanctions_volume` | 4% | causal | GDELT BigQuery | Economic sanctions / financial pressure article volume, z-scored |
+| `hormuz_tone_neg` | 2% | causal | GDELT / RSS | Hormuz news tone, **inverted** |
+
+**OSINT event signals** (sparse; reduced weight to reflect data gaps):
+
+| Signal | Weight | Role | Source | Description |
+|---|---|---|---|---|
+| `osint_munitions` | 2% | causal | OSINT DB | OSINT-verified munitions/operations count, z-scored |
+| `osint_intercept_fail` | 2% | causal | OSINT DB | OSINT air-defense failure rate, z-scored |
+| `acled_events` | 2% | causal | ACLED | Ground-truth event count, z-scored (0 if disabled) |
+
+**Physical Hormuz proxies:**
+
+| Signal | Weight | Role | Source | Description |
+|---|---|---|---|---|
+| `tanker_stress` | 2% | causal | yfinance FRO/STNG/DHT | Equal-weight tanker-equity basket 5-day return, z-scored; leads GDELT tone by 1–3 days |
+| `brent_wti_spread` | 1% | causal | yfinance BZ=F / CL=F | Brent minus WTI spread, z-scored; positive = Middle East supply-risk premium building |
+
+**Confirming signals** (market-return based; corroboration layer only — do not gate regime):
+
+| Signal | Weight | Role | Source | Description |
+|---|---|---|---|---|
+| `crypto_risk_off` | 4% | **confirming** | yfinance BTC-USD | BTC 5-day % change, **inverted** |
+| `energy_rel` | 3% | **confirming** | yfinance XLE/SPY | XLE 5-day return minus SPY |
+| `bond_stress` | 2% | **confirming** | yfinance TLT | TLT 5-day % change, **inverted** |
+| `defense_rel` | 2% | **confirming** | yfinance ITA/SPY | ITA 5-day return minus SPY |
+| `credit_stress` | 1% | **confirming** | yfinance HYG | HYG 5-day % change, **inverted** |
+
+Weights sum to 1.0 across all 26 signals. Causal signal weights are renormalized to 1.0 for the escalation score; confirming weights apply only to the separate confirming composite. If `ENABLE_WEIGHT_OPTIMIZATION = True`, market-component weights are replaced by logistic-regression-derived values at runtime.
 
 ---
 
@@ -392,7 +431,7 @@ Weights sum to 1.0. Causal signal weights are renormalized to 1.0 for the escala
 
 ## Output Files
 
-After a full run, the notebook produces the following artifacts in the working directory:
+After a full run, the notebook produces the following artifacts. With `USE_DRIVE = True` (default), all files are saved to **My Drive → IranDashboard/** and persist across Colab disconnects. With `USE_DRIVE = False`, files are written to the local Colab filesystem and lost on disconnect.
 
 | File | Description |
 |---|---|
@@ -406,7 +445,7 @@ After a full run, the notebook produces the following artifacts in the working d
 | `signal_contributions_chart.png` | Bar chart showing each signal's contribution to today's score |
 | `escalation_index_chart.png` | ICEI history chart (0–100 scale with confidence bands) |
 | `backtest_validation_chart.png` | Market escalation signal vs. OSINT-verified operations (ROC-AUC backtest) |
-| `osint_lead_lag_chart.png` | Cross-correlation of OSINT operation days vs. market escalation score at lags −5 to +5 days |
+| `osint_lead_lag_chart.png` | Cross-correlation of OSINT operation days vs. market escalation score at lags −10 to +10 days |
 
 ---
 
