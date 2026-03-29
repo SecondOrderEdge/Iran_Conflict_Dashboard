@@ -55,6 +55,9 @@ jobs:
       - name: Run dashboard notebook
         run: |
           mkdir -p outputs
+          # Restore persisted history so the notebook can compute ICEI delta
+          # and score momentum against prior runs.
+          cp latest/escalation_index_history.csv outputs/ 2>/dev/null || true
           papermill \
             conflict_escalation_dashboard_ml_pdf_v5.ipynb \
             outputs/executed_notebook.ipynb \
@@ -374,12 +377,14 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           mkdir -p latest
-          cp outputs/conflict_dashboard_latest.csv  latest/ 2>/dev/null || true
-          cp outputs/data_availability_summary.csv  latest/ 2>/dev/null || true
-          cp outputs/conflict_escalation_chart.png  latest/ 2>/dev/null || true
+          cp outputs/conflict_dashboard_latest.csv    latest/ 2>/dev/null || true
+          cp outputs/data_availability_summary.csv   latest/ 2>/dev/null || true
+          cp outputs/conflict_escalation_chart.png   latest/ 2>/dev/null || true
+          # Persist history CSV so the next run can compute icei_delta and score_momentum
+          cp outputs/escalation_index_history.csv    latest/ 2>/dev/null || true
           # Alert fatigue state — only copy if the detect-regime-change step wrote them
-          cp outputs/last_alerted_regime.txt       latest/ 2>/dev/null || true
-          cp outputs/icei_alerted_thresholds.txt   latest/ 2>/dev/null || true
+          cp outputs/last_alerted_regime.txt         latest/ 2>/dev/null || true
+          cp outputs/icei_alerted_thresholds.txt     latest/ 2>/dev/null || true
           git add latest/
           git diff --cached --quiet || git commit -m "chore: daily dashboard snapshot $(date -u +%Y-%m-%d)"
           git push
