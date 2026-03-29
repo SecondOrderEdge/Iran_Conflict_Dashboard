@@ -70,7 +70,7 @@ Both outputs are combined to generate a **portfolio regime recommendation** — 
 - **Temporal ML holdout** — The Random Forest enforces a strict 60-day train/test split and reports holdout ROC-AUC separately, so overfitting on thin event history is visible rather than hidden.
 - **Empirical weight optimization** — Market signal weights are derived from logistic regression on OSINT ground truth, replacing circular heuristic weighting.
 - **Causal / confirming signal taxonomy** — Signals are tagged as `causal` (drive the escalation score and regime trigger) or `confirming` (market-return based, shown as a separate corroboration layer). This breaks the XLE → overweight XLE circular reference.
-- **26-signal composite model** — Weighted, z-scored, and normalized across market, crypto, news, event, and physical-market dimensions.
+- **28-signal composite model** — Weighted, z-scored, and normalized across market, crypto, news, event, and physical-market dimensions. Explicitly covers the tripartite Iran-Israel-US conflict: US strike volume and American casualty signals are first-class causal inputs.
 - **Physical Hormuz signals** — Tanker-equity basket (FRO / STNG / DHT) and Brent-WTI spread added as forward-looking physical market proxies for Strait of Hormuz stress, supplementing GDELT tone signals.
 - **Sub-sector regime guidance** — Regime recommendations broken to sub-sector level (upstream E&P, midstream, refining, defense primes, defense services) rather than generic ETF direction.
 - **OSINT lead/lag validation** — Cross-correlation of OSINT operation days vs. market escalation score at lags −10 to +10 days. Result is typically near-coincident (lag=0 ± a few days); supports use as a real-time monitoring framework rather than a standalone timing signal.
@@ -447,11 +447,13 @@ Signals are tagged **causal** (drive escalation score and regime trigger) or **c
 | `conflict_tone_neg` | 7% | causal | GDELT / RSS | Iran/Israel conflict tone, **inverted** |
 | `ceasefire_signal` | 7% | causal | GDELT / RSS | Ceasefire/negotiation volume, **inverted** |
 | `hormuz_news` | 6% | causal | GDELT / RSS | Strait of Hormuz disruption article volume, z-scored |
-| `troop_deployment` | 6% | causal | GDELT BigQuery | Troop movement / deployment article volume, z-scored |
-| `iran_instability` | 4% | causal | GDELT / RSS | Iran internal instability article volume, z-scored |
+| `troop_deployment` | 4% | causal | GDELT BigQuery | Troop movement / deployment article volume, z-scored |
+| `iran_instability` | 2% | causal | GDELT / RSS | Iran internal instability article volume, z-scored |
 | `nuclear_volume` | 5% | causal | GDELT BigQuery | Nuclear / WMD escalation article volume, z-scored |
-| `sanctions_volume` | 4% | causal | GDELT BigQuery | Economic sanctions / financial pressure article volume, z-scored |
-| `hormuz_tone_neg` | 2% | causal | GDELT / RSS | Hormuz news tone, **inverted** |
+| `sanctions_volume` | 2% | causal | GDELT BigQuery | Economic sanctions / financial pressure article volume, z-scored |
+| `hormuz_tone_neg` | 1% | causal | GDELT / RSS | Hormuz news tone, **inverted** |
+| `us_strikes` | 6% | causal | GDELT BigQuery | US military strikes on Iran / IRGC / Iran-backed proxies, z-scored |
+| `us_casualties` | 5% | causal | GDELT / RSS | American military casualties in the region, z-scored |
 
 **OSINT event signals** (sparse; reduced weight to reflect data gaps):
 
