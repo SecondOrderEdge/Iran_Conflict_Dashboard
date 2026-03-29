@@ -31,15 +31,7 @@ except ImportError:
 OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", "outputs"))
 TODAY = date.today().isoformat()
 
-# ── Read CSVs ──────────────────────────────────────────────────────────────
-
-def read_csv_first_row(path):
-    try:
-        with open(path) as f:
-            rows = list(csv.DictReader(f))
-        return rows[0] if rows else {}
-    except FileNotFoundError:
-        return {}
+# ── CSV helpers ────────────────────────────────────────────────────────────
 
 def read_csv_all_rows(path):
     try:
@@ -48,55 +40,112 @@ def read_csv_all_rows(path):
     except FileNotFoundError:
         return []
 
-latest_path = OUTPUT_DIR / "conflict_dashboard_latest.csv"
-if not latest_path.exists():
-    print(f"ERROR: {latest_path} not found — did the notebook run complete successfully?")
-    print(f"Contents of {OUTPUT_DIR}: {list(OUTPUT_DIR.iterdir()) if OUTPUT_DIR.exists() else 'directory missing'}")
+# ── Read primary source: escalation_index_history.csv (last row) ──────────
+# This CSV is written by the notebook with flat columns matching the keys
+# used below: escalation_index, escalation_score, p_escalation, etc.
+
+history_path  = OUTPUT_DIR / "escalation_index_history.csv"
+latest_path   = OUTPUT_DIR / "conflict_dashboard_latest.csv"  # existence check only
+avail_path    = OUTPUT_DIR / "data_availability_summary.csv"
+
+# Gate: if the notebook didn't complete at all, neither file will exist.
+if not history_path.exists() and not latest_path.exists():
+    print(f"ERROR: Neither {history_path} nor {latest_path} found — "
+          "did the notebook run complete successfully?")
+    print(f"Contents of {OUTPUT_DIR}: "
+          f"{list(OUTPUT_DIR.iterdir()) if OUTPUT_DIR.exists() else 'directory missing'}")
     sys.exit(1)
 
-latest   = read_csv_first_row(latest_path)
-avail    = read_csv_all_rows(OUTPUT_DIR / "data_availability_summary.csv")
-icei_hist = read_csv_all_rows(OUTPUT_DIR / "escalation_index_history.csv")
+# Prefer history (has proper column names); fall back to latest if needed.
+if history_path.exists():
+    icei_hist = read_csv_all_rows(history_path)
+    latest = icei_hist[-1] if icei_hist else {}
+else:
+    print(f"WARNING: {history_path} not found — falling back to {latest_path} (limited data).")
+    icei_hist = []
+    # dashboard CSV is vertical: rows are metrics, single column "Latest Value"
+    # Build a flat dict by pivoting on the unnamed first column.
+    latest = {}
+    try:
+        with open(latest_path) as f:
+            for row in csv.DictReader(f):
+                keys = list(row.keys())
+                label = row.get("", row.get(keys[0], "")).strip().lower().replace(" ", "_")
+                label = label.replace("(", "").replace(")", "").replace("-", "_")
+                value = row.get("Latest Value", "")
+                if label:
+                    latest[label] = value
+    except FileNotFoundError:
+        pass
+
+# Read availability CSV — format: unnamed index col = layer name, 'Status' column
+avail_rows = read_csv_all_rows(avail_path)
 
 # ── Build context for Claude ───────────────────────────────────────────────
 
-def safe(d, k, default="N/A"):
-    return d.get(k, default) or default
+def safe(d, *keys, default="N/A"):
+    """Try multiple key aliases; return first non-empty value."""
+    for k in keys:
+        v = d.get(k)
+        if v not in (None, "", "nan", "NaN"):
+            return v
+    return default
 
 def fmt_pct(val):
     try:
         return f"{float(val)*100:.1f}%"
     except (ValueError, TypeError):
-        return str(val)
+        return str(val) if val not in (None, "") else "N/A"
 
 def fmt_f(val, decimals=2):
     try:
         return f"{float(val):.{decimals}f}"
     except (ValueError, TypeError):
-        return str(val)
+        return str(val) if val not in (None, "") else "N/A"
 
-regime        = safe(latest, "portfolio_regime")
-esc_score     = fmt_f(safe(latest, "escalation_score"))
-p_esc         = fmt_pct(safe(latest, "p_escalation"))
-p_stab        = fmt_pct(safe(latest, "p_stabilization"))
-p_deesc       = fmt_pct(safe(latest, "p_deescalation"))
-icei          = fmt_f(safe(latest, "icei"), 1)
-icei_delta    = fmt_f(safe(latest, "icei_delta"), 1)
-p_short       = fmt_pct(safe(latest, "p_short_war_2_4w"))
-p_extended    = fmt_pct(safe(latest, "p_extended_1_3m"))
-p_long        = fmt_pct(safe(latest, "p_long_proxy_6m"))
-signal_cov    = fmt_pct(safe(latest, "signal_coverage"))
+# escalation_index_history uses "escalation_index" for ICEI value
+regime    = safe(latest, "portfolio_regime")
+esc_score = fmt_f(safe(latest, "escalation_score"))
+p_esc     = fmt_pct(safe(latest, "p_escalation"))
+p_stab    = fmt_pct(safe(latest, "p_stabilization"))
+p_deesc   = fmt_pct(safe(latest, "p_deescalation"))
+icei      = fmt_f(safe(latest, "escalation_index", "icei"), 1)
+p_short   = fmt_pct(safe(latest, "p_short_war_2_4w"))
+p_extended = fmt_pct(safe(latest, "p_extended_1_3m"))
+p_long    = fmt_pct(safe(latest, "p_long_proxy_6m"))
+confidence = fmt_pct(safe(latest, "model_confidence"))
+
+# ICEI delta: compute from last 2 history rows
+icei_delta = "N/A"
+if len(icei_hist) >= 2:
+    try:
+        prev = float(icei_hist[-2].get("escalation_index", ""))
+        curr = float(icei_hist[-1].get("escalation_index", ""))
+        d = round(curr - prev, 1)
+        icei_delta = f"{'+' if d >= 0 else ''}{d}"
+    except (ValueError, TypeError):
+        pass
 
 # ICEI 7-day trend from history
 icei_7d_ago = "N/A"
 if len(icei_hist) >= 7:
-    icei_7d_ago = fmt_f(icei_hist[-7].get("icei", "N/A"), 1)
+    icei_7d_ago = fmt_f(icei_hist[-7].get("escalation_index", "N/A"), 1)
 
-# Data availability
-avail_summary = ", ".join(
-    f"{r.get('layer','?')}: {r.get('status','?')}"
-    for r in avail
-) or "N/A"
+# Data availability — CSV has unnamed index col (layer name) and 'Status' col
+avail_summary = "N/A"
+if avail_rows:
+    parts = []
+    for r in avail_rows:
+        keys = list(r.keys())
+        # Layer is in the unnamed first column (key = '')
+        layer  = r.get("", r.get(keys[0], "?") if keys else "?").strip()
+        status = r.get("Status", r.get("status", "?")).strip()
+        if layer:
+            parts.append(f"{layer}: {status}")
+    avail_summary = ", ".join(parts) if parts else "N/A"
+
+print(f"DEBUG: regime={regime} icei={icei} icei_delta={icei_delta} p_esc={p_esc} score={esc_score}")
+print(f"DEBUG: avail_summary={avail_summary[:120]}")
 
 # Regime change context from env
 regime_changed = os.environ.get("REGIME_CHANGED", "false") == "true"
@@ -121,6 +170,7 @@ Escalation Score:     {esc_score}  (range -1 to +1; positive = escalation pressu
 P(Escalation):        {p_esc}
 P(Stabilization):     {p_stab}
 P(De-escalation):     {p_deesc}
+Model Confidence:     {confidence}
 
 IRAN CONFLICT ESCALATION INDEX (ICEI)
 ======================================
@@ -137,7 +187,6 @@ P(Long proxy 6m+):    {p_long}
 DATA AVAILABILITY
 =================
 {avail_summary}
-Signal Coverage:      {signal_cov}
 """.strip()
 
 prompt = f"""You are a geopolitical risk analyst writing a concise daily briefing for a portfolio management team.
@@ -178,7 +227,8 @@ try:
     print("Summary generated.")
 except anthropic.BadRequestError as e:
     if "credit balance" in str(e).lower():
-        print(f"WARNING: Anthropic credit balance too low — writing fallback summary. Add credits at console.anthropic.com.")
+        print("WARNING: Anthropic credit balance too low — writing fallback summary. "
+              "Add credits at console.anthropic.com.")
     else:
         print(f"WARNING: Anthropic API error ({e}) — writing fallback summary.")
     summary_md = (
@@ -202,9 +252,7 @@ print("---")
 def md_to_simple_html(text):
     """Minimal markdown → HTML: bold, paragraphs. No external deps."""
     import re
-    # Bold: **text** → <strong>text</strong>
     text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
-    # Paragraphs
     paras = [p.strip() for p in text.strip().split("\n\n") if p.strip()]
     return "\n".join(f"<p>{p.replace(chr(10), '<br>')}</p>" for p in paras)
 
@@ -237,11 +285,11 @@ metrics_table = f"""
       <td style="padding:5px 10px;border:1px solid #E5E7EB;text-align:right;">{p_stab}</td></tr>
   <tr><td style="padding:5px 10px;border:1px solid #E5E7EB;">Escalation Score</td>
       <td style="padding:5px 10px;border:1px solid #E5E7EB;text-align:right;">{esc_score}</td></tr>
-  <tr style="background:#F9FAFB;"><td style="padding:5px 10px;border:1px solid #E5E7EB;">Signal Coverage</td>
-      <td style="padding:5px 10px;border:1px solid #E5E7EB;text-align:right;">{signal_cov}</td></tr>
+  <tr style="background:#F9FAFB;"><td style="padding:5px 10px;border:1px solid #E5E7EB;">Model Confidence</td>
+      <td style="padding:5px 10px;border:1px solid #E5E7EB;text-align:right;">{confidence}</td></tr>
 </table>"""
 
-run_url = os.environ.get("RUN_URL", "#")
+run_url  = os.environ.get("RUN_URL",  "#")
 repo_url = os.environ.get("REPO_URL", "#")
 
 html_body = f"""<!DOCTYPE html>
@@ -274,7 +322,6 @@ out_path = OUTPUT_DIR / "email_summary.html"
 out_path.write_text(html_body, encoding="utf-8")
 print(f"HTML summary written to {out_path}")
 
-# Also write plain-text version for non-HTML clients
 plain_path = OUTPUT_DIR / "email_summary.txt"
 plain_path.write_text(
     f"Iran Conflict Escalation Dashboard — {TODAY}\n"
