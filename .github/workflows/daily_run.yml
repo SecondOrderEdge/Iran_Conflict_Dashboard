@@ -70,6 +70,12 @@ jobs:
       # Compares today's regime/ICEI against the last committed snapshot in
       # latest/conflict_dashboard_latest.csv.  Writes alert metadata to
       # GITHUB_ENV so downstream steps can branch on it.
+      #
+      # Alert fatigue management: regime alerts only fire on FIRST ENTRY into
+      # a new regime.  We track the last alerted regime in
+      # latest/last_alerted_regime.txt so repeat runs in the same regime are
+      # silent.  ICEI threshold alerts also deduplicate — each crossing fires
+      # only once per direction (tracked in latest/icei_alerted_thresholds.txt).
       - name: Detect regime change
         if: success()
         run: |
@@ -83,6 +89,12 @@ jobs:
                   return rows[0] if rows else {}
               except FileNotFoundError:
                   return {}
+
+          def read_text(path, default=""):
+              try:
+                  return pathlib.Path(path).read_text().strip()
+              except FileNotFoundError:
+                  return default
 
           prev = read_latest("latest/conflict_dashboard_latest.csv")
           curr = read_latest("outputs/conflict_dashboard_latest.csv")
@@ -98,26 +110,65 @@ jobs:
           curr_icei  = safe_float(curr, "icei")
           curr_p_esc = safe_float(curr, "p_escalation")
           curr_score = safe_float(curr, "escalation_score")
+          curr_hormuz = safe_float(curr, "hormuz_closure_prob")
+          curr_exp   = safe_float(curr, "expansion_index_val")
 
+          # ── Alert fatigue: regime ─────────────────────────────────────────
+          # Only alert on FIRST entry into a regime — not every run.
+          # last_alerted_regime.txt stores the regime we last sent an alert for.
+          last_alerted_regime = read_text("latest/last_alerted_regime.txt", "")
           regime_changed = (prev_regime != curr_regime and prev_regime != "unknown")
+          # Suppress if we already alerted on this exact regime
+          regime_alert = regime_changed and (curr_regime != last_alerted_regime)
 
-          # ICEI threshold alerts: crossing 70 (elevated) or 30 (low pressure)
+          # ── Alert fatigue: ICEI thresholds ────────────────────────────────
+          # icei_alerted_thresholds.txt stores comma-separated already-alerted tags
+          # e.g.  "above_70,above_80"  — prevents duplicate alerts per crossing.
+          alerted_thresholds = set(read_text("latest/icei_alerted_thresholds.txt", "").split(","))
+          alerted_thresholds.discard("")
+
           icei_alert = ""
-          if curr_icei == curr_icei and prev_icei == prev_icei:  # not NaN
-              if prev_icei < 70 <= curr_icei:
-                  icei_alert = f"ICEI crossed above 70 ({curr_icei:.1f}) — elevated escalation territory"
-              elif prev_icei >= 70 > curr_icei:
-                  icei_alert = f"ICEI dropped below 70 ({curr_icei:.1f}) — leaving elevated territory"
-              elif prev_icei > 30 >= curr_icei:
-                  icei_alert = f"ICEI dropped below 30 ({curr_icei:.1f}) — low-pressure territory"
-              elif prev_icei <= 30 < curr_icei:
-                  icei_alert = f"ICEI crossed above 30 ({curr_icei:.1f}) — leaving low-pressure territory"
+          new_threshold_tag = ""
 
-          should_alert = regime_changed or bool(icei_alert)
+          if curr_icei == curr_icei and prev_icei == prev_icei:  # not NaN
+              if prev_icei < 90 <= curr_icei and "above_90" not in alerted_thresholds:
+                  icei_alert = f"ICEI crossed above 90 ({curr_icei:.1f}) — extreme escalation territory"
+                  new_threshold_tag = "above_90"
+              elif prev_icei < 80 <= curr_icei and "above_80" not in alerted_thresholds:
+                  icei_alert = f"ICEI crossed above 80 ({curr_icei:.1f}) — high escalation territory"
+                  new_threshold_tag = "above_80"
+              elif prev_icei < 70 <= curr_icei and "above_70" not in alerted_thresholds:
+                  icei_alert = f"ICEI crossed above 70 ({curr_icei:.1f}) — elevated escalation territory"
+                  new_threshold_tag = "above_70"
+              elif prev_icei >= 70 > curr_icei and "below_70" not in alerted_thresholds:
+                  icei_alert = f"ICEI dropped below 70 ({curr_icei:.1f}) — leaving elevated territory"
+                  new_threshold_tag = "below_70"
+                  # Reset above_70/80/90 so they can fire again next time
+                  alerted_thresholds -= {"above_70", "above_80", "above_90"}
+              elif prev_icei > 30 >= curr_icei and "below_30" not in alerted_thresholds:
+                  icei_alert = f"ICEI dropped below 30 ({curr_icei:.1f}) — low-pressure territory"
+                  new_threshold_tag = "below_30"
+              elif prev_icei <= 30 < curr_icei and "above_30" not in alerted_thresholds:
+                  icei_alert = f"ICEI crossed above 30 ({curr_icei:.1f}) — leaving low-pressure territory"
+                  new_threshold_tag = "above_30"
+                  alerted_thresholds.discard("below_30")
+
+          should_alert = regime_alert or bool(icei_alert)
+
+          # ── Update persisted fatigue-management state ─────────────────────
+          # These files are committed by the "Commit latest snapshot" step below.
+          pathlib.Path("outputs").mkdir(exist_ok=True)
+          if regime_alert:
+              pathlib.Path("outputs/last_alerted_regime.txt").write_text(curr_regime)
+          if new_threshold_tag:
+              alerted_thresholds.add(new_threshold_tag)
+              pathlib.Path("outputs/icei_alerted_thresholds.txt").write_text(
+                  ",".join(sorted(alerted_thresholds))
+              )
 
           env_file = os.environ["GITHUB_ENV"]
           with open(env_file, "a") as f:
-              f.write(f"REGIME_CHANGED={'true' if regime_changed else 'false'}\n")
+              f.write(f"REGIME_CHANGED={'true' if regime_alert else 'false'}\n")
               f.write(f"SHOULD_ALERT={'true' if should_alert else 'false'}\n")
               f.write(f"PREV_REGIME={prev_regime}\n")
               f.write(f"CURR_REGIME={curr_regime}\n")
@@ -125,8 +176,13 @@ jobs:
               f.write(f"CURR_P_ESC={curr_p_esc:.3f}\n")
               f.write(f"CURR_SCORE={curr_score:.3f}\n")
               f.write(f"ICEI_ALERT={icei_alert}\n")
+              f.write(f"CURR_HORMUZ={curr_hormuz:.1f}\n")
+              f.write(f"CURR_EXP_IDX={curr_exp:.3f}\n")
 
-          print(f"Regime: {prev_regime} → {curr_regime} | ICEI: {prev_icei:.1f} → {curr_icei:.1f} | alert={should_alert}")
+          print(f"Regime: {prev_regime} → {curr_regime} | ICEI: {prev_icei:.1f} → {curr_icei:.1f}")
+          print(f"Hormuz closure prob: {curr_hormuz:.1f}/100 | Expansion index: {curr_exp:.3f}")
+          print(f"regime_alert={regime_alert} icei_alert={bool(icei_alert)} should_alert={should_alert}")
+          print(f"Last alerted regime: '{last_alerted_regime}' | Alerted thresholds: {alerted_thresholds}")
           PYEOF
 
       # ── Generate Claude summary ───────────────────────────────────────────
@@ -266,7 +322,9 @@ jobs:
           BODY+="| Regime | **${CURR_REGIME}** |"$'\n'
           BODY+="| ICEI | ${CURR_ICEI} |"$'\n'
           BODY+="| P(Escalation) | ${CURR_P_ESC} |"$'\n'
-          BODY+="| Escalation Score | ${CURR_SCORE} |"$'\n\n'
+          BODY+="| Escalation Score | ${CURR_SCORE} |"$'\n'
+          BODY+="| Hormuz Closure Risk | ${CURR_HORMUZ}/100 |"$'\n'
+          BODY+="| Expansion Index | ${CURR_EXP_IDX} |"$'\n\n'
           BODY+="[Full run artifacts](${RUN_URL})"
 
           ISSUE_NUM=$(gh issue list --repo "$REPO" \
@@ -308,6 +366,8 @@ jobs:
 
       # ── Commit latest snapshot back to repo ──────────────────────────────
       # Keeps a rolling latest-day CSV so the next run can detect regime changes.
+      # Also persists alert fatigue state (last_alerted_regime, icei thresholds)
+      # so repeated runs in the same regime don't spam alerts.
       - name: Commit latest snapshot
         if: success()
         run: |
@@ -317,6 +377,9 @@ jobs:
           cp outputs/conflict_dashboard_latest.csv  latest/ 2>/dev/null || true
           cp outputs/data_availability_summary.csv  latest/ 2>/dev/null || true
           cp outputs/conflict_escalation_chart.png  latest/ 2>/dev/null || true
+          # Alert fatigue state — only copy if the detect-regime-change step wrote them
+          cp outputs/last_alerted_regime.txt       latest/ 2>/dev/null || true
+          cp outputs/icei_alerted_thresholds.txt   latest/ 2>/dev/null || true
           git add latest/
           git diff --cached --quiet || git commit -m "chore: daily dashboard snapshot $(date -u +%Y-%m-%d)"
           git push
