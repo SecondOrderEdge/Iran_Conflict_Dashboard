@@ -70,7 +70,7 @@ Both outputs are combined to generate a **portfolio regime recommendation** — 
 - **Temporal ML holdout** — The Random Forest enforces a strict 60-day train/test split and reports holdout ROC-AUC separately, so overfitting on thin event history is visible rather than hidden.
 - **Empirical weight optimization** — Market signal weights are derived from logistic regression on OSINT ground truth, replacing circular heuristic weighting.
 - **Causal / confirming signal taxonomy** — Signals are tagged as `causal` (drive the escalation score and regime trigger) or `confirming` (market-return based, shown as a separate corroboration layer). This breaks the XLE → overweight XLE circular reference.
-- **28-signal composite model** — Weighted, z-scored, and normalized across market, crypto, news, event, and physical-market dimensions. Explicitly covers the tripartite Iran-Israel-US conflict: US strike volume and American casualty signals are first-class causal inputs.
+- **37-signal composite model** — Weighted, z-scored, and normalized across market, news, event, and physical-market dimensions. Explicitly covers the tripartite Iran-Israel-US conflict with dedicated signals for US strikes, American casualties, Israeli airstrikes, Hezbollah operations, CENTCOM force posture, Israeli Shekel, crude oil volatility, Wikipedia edit velocity, and GDELT structured conflict event counts.
 - **Physical Hormuz signals** — Tanker-equity basket (FRO / STNG / DHT) and Brent-WTI spread added as forward-looking physical market proxies for Strait of Hormuz stress, supplementing GDELT tone signals.
 - **Sub-sector regime guidance** — Regime recommendations broken to sub-sector level (upstream E&P, midstream, refining, defense primes, defense services) rather than generic ETF direction.
 - **OSINT lead/lag validation** — Cross-correlation of OSINT operation days vs. market escalation score at lags −10 to +10 days. Result is typically near-coincident (lag=0 ± a few days); supports use as a real-time monitoring framework rather than a standalone timing signal.
@@ -447,13 +447,24 @@ Signals are tagged **causal** (drive escalation score and regime trigger) or **c
 | `conflict_tone_neg` | 7% | causal | GDELT / RSS | Iran/Israel conflict tone, **inverted** |
 | `ceasefire_signal` | 7% | causal | GDELT / RSS | Ceasefire/negotiation volume, **inverted** |
 | `hormuz_news` | 6% | causal | GDELT / RSS | Strait of Hormuz disruption article volume, z-scored |
-| `troop_deployment` | 4% | causal | GDELT BigQuery | Troop movement / deployment article volume, z-scored |
-| `iran_instability` | 2% | causal | GDELT / RSS | Iran internal instability article volume, z-scored |
-| `nuclear_volume` | 5% | causal | GDELT BigQuery | Nuclear / WMD escalation article volume, z-scored |
-| `sanctions_volume` | 2% | causal | GDELT BigQuery | Economic sanctions / financial pressure article volume, z-scored |
+| `troop_deployment` | 3% | causal | GDELT BigQuery | Troop movement / deployment article volume, z-scored |
+| `iran_instability` | 1% | causal | GDELT / RSS | Iran internal instability article volume, z-scored |
+| `nuclear_volume` | 4% | causal | GDELT BigQuery | Nuclear / WMD escalation article volume, z-scored |
+| `sanctions_volume` | 1% | causal | GDELT BigQuery | Economic sanctions / financial pressure article volume, z-scored |
 | `hormuz_tone_neg` | 1% | causal | GDELT / RSS | Hormuz news tone, **inverted** |
 | `us_strikes` | 6% | causal | GDELT BigQuery | US military strikes on Iran / IRGC / Iran-backed proxies, z-scored |
 | `us_casualties` | 5% | causal | GDELT / RSS | American military casualties in the region, z-scored |
+| `hezbollah_news` | 4% | causal | GDELT BigQuery | Hezbollah operations and strikes (Lebanon front), z-scored |
+| `israel_strikes` | 4% | causal | GDELT BigQuery | IDF / Israeli military airstrikes on Iran, Syria, Lebanon, z-scored |
+| `us_centcom` | 3% | causal | GDELT BigQuery | US CENTCOM / carrier strike group / B-2 deployment volume, z-scored |
+| `wiki_edits` | 2% | causal | Wikipedia API | Daily edit velocity on Iran-Israel conflict articles — spikes hours before GDELT indexes events |
+
+**GDELT Events — structured conflict counts (free ACLED alternative):**
+
+| Signal | Weight | Role | Source | Description |
+|---|---|---|---|---|
+| `gdelt_conflict_events` | 2% | causal | GDELT Events BigQuery | Daily count of CAMEO 19/20 (Fight / Mass Violence) events between Iran-Israel-US-Lebanon-Yemen actors — structured event data without ACLED credentials |
+| `gdelt_goldstein_neg` | 2% | causal | GDELT Events BigQuery | Negated mean Goldstein scale of those events (−10 = maximum violence → signal = +1); measures intensity not just count |
 
 **OSINT event signals** (sparse; reduced weight to reflect data gaps):
 
@@ -463,21 +474,29 @@ Signals are tagged **causal** (drive escalation score and regime trigger) or **c
 | `osint_intercept_fail` | 2% | causal | OSINT DB | OSINT air-defense failure rate, z-scored |
 | `acled_events` | 2% | causal | ACLED | Ground-truth event count, z-scored (0 if disabled) |
 
+**Direct conflict market signals:**
+
+| Signal | Weight | Role | Source | Description |
+|---|---|---|---|---|
+| `ils_shock` | 5% | causal | yfinance ILS=X | Israeli Shekel/USD 60-day z-score — best single-market escalation thermometer; sells off immediately on Iran-Israel tension |
+| `ovx_shock` | 4% | causal | yfinance ^OVX | CBOE Crude Oil Volatility Index 60-day z-score — options market's implied fear on oil, leads spot oil moves |
+
 **Physical Hormuz proxies:**
 
 | Signal | Weight | Role | Source | Description |
 |---|---|---|---|---|
-| `tanker_stress` | 2% | causal | yfinance FRO/STNG/DHT | Equal-weight tanker-equity basket 5-day return, z-scored; leads GDELT tone by 1–3 days |
+| `tanker_stress` | 1% | causal | yfinance FRO/STNG/DHT | Equal-weight tanker-equity basket 5-day return, z-scored; leads GDELT tone by 1–3 days |
 | `brent_wti_spread` | 1% | causal | yfinance BZ=F / CL=F | Brent minus WTI spread, z-scored; positive = Middle East supply-risk premium building |
 
 **Confirming signals** (market-return based; corroboration layer only — do not gate regime):
 
 | Signal | Weight | Role | Source | Description |
 |---|---|---|---|---|
-| `crypto_risk_off` | 4% | **confirming** | yfinance BTC-USD | BTC 5-day % change, **inverted** |
-| `energy_rel` | 3% | **confirming** | yfinance XLE/SPY | XLE 5-day return minus SPY |
+| `crypto_risk_off` | 3% | **confirming** | yfinance BTC-USD | BTC 5-day % change, **inverted** |
+| `energy_rel` | 2% | **confirming** | yfinance XLE/SPY | XLE 5-day return minus SPY |
+| `defense_primes_rel` | 2% | **confirming** | yfinance LMT/RTX/NOC | Defense prime contractors (Lockheed/Raytheon/Northrop) basket vs SPY — more specific than ITA |
 | `bond_stress` | 2% | **confirming** | yfinance TLT | TLT 5-day % change, **inverted** |
-| `defense_rel` | 2% | **confirming** | yfinance ITA/SPY | ITA 5-day return minus SPY |
+| `defense_rel` | 1% | **confirming** | yfinance ITA/SPY | ITA 5-day return minus SPY (broad aerospace/defense) |
 | `credit_stress` | 1% | **confirming** | yfinance HYG | HYG 5-day % change, **inverted** |
 
 Weights sum to 1.0 across all 26 signals. Causal signal weights are renormalized to 1.0 for the escalation score; confirming weights apply only to the separate confirming composite. If `ENABLE_WEIGHT_OPTIMIZATION = True`, market-component weights are replaced by logistic-regression-derived values at runtime.
@@ -505,6 +524,11 @@ Weights sum to 1.0 across all 26 signals. Causal signal weights are renormalized
 | `FRO` | Frontline Group — VLCC tanker operator | Physical Hormuz Proxy |
 | `STNG` | Scorpio Tankers — product tanker, Hormuz-route exposed | Physical Hormuz Proxy |
 | `DHT` | DHT Holdings — VLCC, Brent-route exposed | Physical Hormuz Proxy |
+| `ILS=X` | Israeli Shekel / USD | Direct Conflict Signal |
+| `^OVX` | CBOE Crude Oil Volatility Index | Direct Conflict Signal |
+| `LMT` | Lockheed Martin | Defense Primes |
+| `RTX` | Raytheon Technologies | Defense Primes |
+| `NOC` | Northrop Grumman | Defense Primes |
 
 ---
 
