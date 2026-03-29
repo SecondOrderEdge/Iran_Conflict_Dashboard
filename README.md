@@ -30,6 +30,7 @@ A **quantitative geopolitical risk dashboard** that combines financial market si
 - [Market Tickers](#market-tickers)
 - [Output Files](#output-files)
 - [Example Output](#example-output)
+- [Understanding the Output](#understanding-the-output)
 - [Contributing](#contributing)
 - [Disclaimer](#disclaimer)
 - [License](#license)
@@ -69,7 +70,7 @@ Both outputs are combined to generate a **portfolio regime recommendation** — 
 - **Temporal ML holdout** — The Random Forest enforces a strict 60-day train/test split and reports holdout ROC-AUC separately, so overfitting on thin event history is visible rather than hidden.
 - **Empirical weight optimization** — Market signal weights are derived from logistic regression on OSINT ground truth, replacing circular heuristic weighting.
 - **Causal / confirming signal taxonomy** — Signals are tagged as `causal` (drive the escalation score and regime trigger) or `confirming` (market-return based, shown as a separate corroboration layer). This breaks the XLE → overweight XLE circular reference.
-- **26-signal composite model** — Weighted, z-scored, and normalized across market, crypto, news, event, and physical-market dimensions.
+- **28-signal composite model** — Weighted, z-scored, and normalized across market, crypto, news, event, and physical-market dimensions. Explicitly covers the tripartite Iran-Israel-US conflict: US strike volume and American casualty signals are first-class causal inputs.
 - **Physical Hormuz signals** — Tanker-equity basket (FRO / STNG / DHT) and Brent-WTI spread added as forward-looking physical market proxies for Strait of Hormuz stress, supplementing GDELT tone signals.
 - **Sub-sector regime guidance** — Regime recommendations broken to sub-sector level (upstream E&P, midstream, refining, defense primes, defense services) rather than generic ETF direction.
 - **OSINT lead/lag validation** — Cross-correlation of OSINT operation days vs. market escalation score at lags −10 to +10 days. Result is typically near-coincident (lag=0 ± a few days); supports use as a real-time monitoring framework rather than a standalone timing signal.
@@ -93,7 +94,9 @@ Both outputs are combined to generate a **portfolio regime recommendation** — 
 
 ## Scheduled Execution (GitHub Actions)
 
-A `.github/workflows/daily_run.yml` workflow runs the dashboard automatically at **06:00 UTC, Monday–Friday** and saves outputs as downloadable GitHub Actions artifacts (retained for 30 days). It can also be triggered manually from the **Actions** tab.
+A `.github/workflows/daily_run.yml` workflow runs the dashboard automatically **twice daily — 08:00 and 15:30 CST (14:00 and 21:30 UTC) — every day** and saves outputs as downloadable GitHub Actions artifacts (retained for 30 days). It can also be triggered manually from the **Actions** tab at any time.
+
+To change the schedule, edit the `cron:` lines near the top of the workflow file. Times are in UTC; CST = UTC−6, CDT (summer) = UTC−5.
 
 ### What it does
 
@@ -102,10 +105,14 @@ A `.github/workflows/daily_run.yml` workflow runs the dashboard automatically at
 - Uploads the PDF report, CSVs, and charts as a run artifact
 - Commits a lightweight `latest/` snapshot (latest-day CSV + chart) back to the repo
 
+### Are my secrets safe in a public repo?
+
+**Yes.** Your API keys, email password, and GCP credentials are stored in GitHub's encrypted secrets vault — they are never written to any file in the repository. The workflow YAML only references them by name (e.g. `${{ secrets.ANTHROPIC_API_KEY }}`); GitHub substitutes the real value at runtime and automatically masks it in all log output. Even if someone forks your public repo, they get the code but not your secrets. As long as you never paste a real key directly into a `.yml` file or notebook cell, nothing sensitive is exposed.
+
 ### Setup (5 minutes)
 
-1. Fork or clone this repository to your own GitHub account
-2. Go to **Settings → Secrets and variables → Actions → New repository secret**
+1. **Fork this repository** to your own GitHub account (click **Fork** in the top-right corner of the repo page). This gives you your own copy where you can configure secrets and the workflow will run under your account.
+2. Go to your fork → **Settings → Secrets and variables → Actions → New repository secret**
 3. Add the following secrets:
 
 **Required for email digest:**
@@ -440,11 +447,13 @@ Signals are tagged **causal** (drive escalation score and regime trigger) or **c
 | `conflict_tone_neg` | 7% | causal | GDELT / RSS | Iran/Israel conflict tone, **inverted** |
 | `ceasefire_signal` | 7% | causal | GDELT / RSS | Ceasefire/negotiation volume, **inverted** |
 | `hormuz_news` | 6% | causal | GDELT / RSS | Strait of Hormuz disruption article volume, z-scored |
-| `troop_deployment` | 6% | causal | GDELT BigQuery | Troop movement / deployment article volume, z-scored |
-| `iran_instability` | 4% | causal | GDELT / RSS | Iran internal instability article volume, z-scored |
+| `troop_deployment` | 4% | causal | GDELT BigQuery | Troop movement / deployment article volume, z-scored |
+| `iran_instability` | 2% | causal | GDELT / RSS | Iran internal instability article volume, z-scored |
 | `nuclear_volume` | 5% | causal | GDELT BigQuery | Nuclear / WMD escalation article volume, z-scored |
-| `sanctions_volume` | 4% | causal | GDELT BigQuery | Economic sanctions / financial pressure article volume, z-scored |
-| `hormuz_tone_neg` | 2% | causal | GDELT / RSS | Hormuz news tone, **inverted** |
+| `sanctions_volume` | 2% | causal | GDELT BigQuery | Economic sanctions / financial pressure article volume, z-scored |
+| `hormuz_tone_neg` | 1% | causal | GDELT / RSS | Hormuz news tone, **inverted** |
+| `us_strikes` | 6% | causal | GDELT BigQuery | US military strikes on Iran / IRGC / Iran-backed proxies, z-scored |
+| `us_casualties` | 5% | causal | GDELT / RSS | American military casualties in the region, z-scored |
 
 **OSINT event signals** (sparse; reduced weight to reflect data gaps):
 
@@ -531,6 +540,44 @@ The report includes:
 - Signal contribution bar chart
 - 90-day escalation trend chart
 - Full signal table with current values
+
+---
+
+## Understanding the Output
+
+### What the model measures — and what it doesn't
+
+The dashboard is a **quantitative signal aggregator**, not a news reader. It detects escalation risk that has already been reflected in market prices and indexed news flow. It does not read breaking news in real time.
+
+This distinction matters in practice: if troops are moving and casualties are being reported this morning, but markets haven't repriced yet and GDELT hasn't fully indexed the sentiment shift, the model will lag behind what you're seeing in headlines. **When your own news read and the model diverge, the news is probably right and the model is catching up.**
+
+The value of the model runs in the other direction — it catches slow-building market pressure that isn't yet generating obvious headlines, and it removes emotional bias from the assessment by grounding it in price action, article volumes, and verified events.
+
+### The three signal sources and their lag profiles
+
+| Source | What it measures | Typical lag |
+|---|---|---|
+| **Market prices** (yfinance) | What traders are pricing in for risk | 0–1 day — fast, but markets sometimes discount the probability of full escalation even as ground conditions worsen |
+| **GDELT news** | Volume and sentiment tone of published articles | 12–24 hours — GDELT indexes published articles; breaking developments take time to propagate through enough sources to move the aggregate |
+| **OSINT database** | Verified Iran-Israel conflict operations | Variable — depends on when the community-maintained GitHub database is updated; can be 1–3 days behind fast-moving events |
+
+### Why "Stabilization" doesn't mean "calm"
+
+The regime label **Stabilization** means *the quantitative signals haven't crossed the threshold for Active Escalation* — not that the situation is fine. An ICEI of 58 (mid-range "mixed signals" band) with a 33% escalation probability is elevated. It reflects real structural tension. "Stabilization" in this model's vocabulary means "the systematic signal does not yet show a dominant directional trend toward rapid phase change" — which is compatible with serious deterioration happening on the ground.
+
+### How to use the model and your own judgment together
+
+- Use the **ICEI trend over multiple runs** rather than any single snapshot — the direction matters more than the absolute reading
+- Use the **90-day escalation score chart** to see whether pressure has been building gradually
+- If your news read shows clear escalation but the model is still in Stabilization, treat that as the model lagging, not as confirmation that things are fine
+- The model is most useful for catching things you might miss — not for overriding what you can see directly
+
+### Known limitations
+
+- **Sparse OSINT data:** The OSINT database typically has verified events on ~15–20 out of 90 days. The Random Forest ML layer trains on this; with few positive examples, the model is conservative about calling Escalation
+- **GDELT rate limits:** Without BigQuery, the REST API is shared public infrastructure that frequently returns empty responses. BigQuery (free tier) gives much more reliable signal
+- **No real-time news feed:** The model is not connected to a live news API. It does not know what happened this hour
+- **US-centric market hours:** Yahoo Finance data is current to the prior trading day's close; overnight developments won't appear until the next run after markets open
 
 ---
 

@@ -2,8 +2,8 @@ name: Daily Dashboard Run
 
 on:
   schedule:
-    # 06:00 UTC Monday–Friday (markets closed on weekends; no new data)
-    - cron: "0 6 * * 1-5"
+    - cron: "0 14 * * *"    # 08:00 CST (UTC-6) — morning run
+    - cron: "30 21 * * *"   # 15:30 CST (UTC-6) — afternoon run
   workflow_dispatch:       # allow manual trigger from the Actions tab
 
 permissions:
