@@ -193,6 +193,10 @@ Hormuz Closure Risk:  {hormuz_prob} / 100  (0=no risk | 50=elevated | 80+=critic
 Bab al-Mandeb Risk:   {bam_prob} / 100
 War Expansion Index:  {expansion}  (positive = watchlist countries entering conflict)
 
+NOTE: Hormuz scores weight oil_shock and ovx_shock most heavily (real-time market
+signals). GDELT narrative signals lag 12-24 hours. If Hormuz is actively closed,
+the score may initially lag behind reality until oil/options markets fully price it in.
+
 DATA AVAILABILITY
 =================
 {avail_summary}
@@ -208,7 +212,7 @@ Write a 3–4 paragraph plain-English briefing suitable for an email to investor
 
 1. **Headline / current assessment** — one sentence summarising the regime and ICEI reading.
 2. **What the signals are saying** — briefly interpret the escalation score, probability split, and any notable changes (regime flip, ICEI threshold crossing). Do not just restate the numbers — explain what they mean in plain English.
-3. **Chokepoint risk** — comment on Hormuz and Bab al-Mandeb closure risk scores only if either is above 40/100. If both are below 40, omit this section and use the space for duration outlook instead.
+3. **Chokepoint risk** — comment on Hormuz and Bab al-Mandeb closure risk scores only if either is above 40/100. Note that Hormuz scores are driven by real-time oil/options market signals and may underreport an active closure by up to 24 hours due to GDELT indexing lag. If both are below 40, omit this section.
 4. **Duration outlook** — what the conflict duration probabilities suggest about the most likely scenario if escalation does occur.
 5. **Positioning note** — one short paragraph on what the current regime implies for portfolio positioning, based on the regime guidance for {regime}.
 
