@@ -70,7 +70,7 @@ Both outputs are combined to generate a **portfolio regime recommendation** — 
 - **Temporal ML holdout** — The Random Forest enforces a strict 60-day train/test split and reports holdout ROC-AUC separately, so overfitting on thin event history is visible rather than hidden.
 - **Empirical weight optimization** — Market signal weights are derived from logistic regression on OSINT ground truth, replacing circular heuristic weighting.
 - **Causal / confirming signal taxonomy** — Signals are tagged as `causal` (drive the escalation score and regime trigger) or `confirming` (market-return based, shown as a separate corroboration layer). This breaks the XLE → overweight XLE circular reference.
-- **35-signal composite model** — Weighted, z-scored, and normalized across market, news, event, and physical-market dimensions. Explicitly covers the tripartite Iran-Israel-US conflict with dedicated signals for US strikes, American casualties, Israeli airstrikes, Hezbollah operations, CENTCOM force posture, Israeli Shekel, crude oil volatility, and Wikipedia edit velocity.
+- **37-signal composite model** — Weighted, z-scored, and normalized across market, news, event, and physical-market dimensions. Explicitly covers the tripartite Iran-Israel-US conflict with dedicated signals for US strikes, American casualties, Israeli airstrikes, Hezbollah operations, CENTCOM force posture, Israeli Shekel, crude oil volatility, Wikipedia edit velocity, and GDELT structured conflict event counts.
 - **Physical Hormuz signals** — Tanker-equity basket (FRO / STNG / DHT) and Brent-WTI spread added as forward-looking physical market proxies for Strait of Hormuz stress, supplementing GDELT tone signals.
 - **Sub-sector regime guidance** — Regime recommendations broken to sub-sector level (upstream E&P, midstream, refining, defense primes, defense services) rather than generic ETF direction.
 - **OSINT lead/lag validation** — Cross-correlation of OSINT operation days vs. market escalation score at lags −10 to +10 days. Result is typically near-coincident (lag=0 ± a few days); supports use as a real-time monitoring framework rather than a standalone timing signal.
@@ -458,6 +458,13 @@ Signals are tagged **causal** (drive escalation score and regime trigger) or **c
 | `israel_strikes` | 4% | causal | GDELT BigQuery | IDF / Israeli military airstrikes on Iran, Syria, Lebanon, z-scored |
 | `us_centcom` | 3% | causal | GDELT BigQuery | US CENTCOM / carrier strike group / B-2 deployment volume, z-scored |
 | `wiki_edits` | 2% | causal | Wikipedia API | Daily edit velocity on Iran-Israel conflict articles — spikes hours before GDELT indexes events |
+
+**GDELT Events — structured conflict counts (free ACLED alternative):**
+
+| Signal | Weight | Role | Source | Description |
+|---|---|---|---|---|
+| `gdelt_conflict_events` | 2% | causal | GDELT Events BigQuery | Daily count of CAMEO 19/20 (Fight / Mass Violence) events between Iran-Israel-US-Lebanon-Yemen actors — structured event data without ACLED credentials |
+| `gdelt_goldstein_neg` | 2% | causal | GDELT Events BigQuery | Negated mean Goldstein scale of those events (−10 = maximum violence → signal = +1); measures intensity not just count |
 
 **OSINT event signals** (sparse; reduced weight to reflect data gaps):
 
