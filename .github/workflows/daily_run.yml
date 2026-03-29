@@ -155,7 +155,8 @@ jobs:
       # MAIL_TO accepts comma-separated addresses:
       #   you@gmail.com,colleague@firm.com,analyst@hedge.fund
       - name: Send email digest
-        if: success() && env.HAS_MAIL == 'true'
+        if: env.HAS_MAIL == 'true'
+        continue-on-error: true
         env:
           MAIL_SERVER:   ${{ secrets.MAIL_SERVER }}
           MAIL_PORT:     ${{ secrets.MAIL_PORT }}
@@ -166,27 +167,58 @@ jobs:
           CURR_REGIME:   ${{ env.CURR_REGIME }}
         run: |
           python3 - <<'PYEOF'
-          import os, smtplib, pathlib
+          import os, sys, smtplib, pathlib
           from email.mime.multipart import MIMEMultipart
           from email.mime.text import MIMEText
           from datetime import date
 
+          # ── Debug: print which env vars are present ──────────────────────
+          print(f"DEBUG MAIL_SERVER   : {os.environ.get('MAIL_SERVER', 'NOT SET')}")
+          print(f"DEBUG MAIL_PORT     : {os.environ.get('MAIL_PORT', 'NOT SET')}")
+          print(f"DEBUG MAIL_USERNAME : {'SET' if os.environ.get('MAIL_USERNAME') else 'NOT SET'}")
+          print(f"DEBUG MAIL_PASSWORD : {'SET' if os.environ.get('MAIL_PASSWORD') else 'NOT SET'}")
+          print(f"DEBUG MAIL_TO       : {os.environ.get('MAIL_TO', 'NOT SET')}")
+          print(f"DEBUG REGIME_CHANGED: {os.environ.get('REGIME_CHANGED', 'NOT SET')}")
+          print(f"DEBUG CURR_REGIME   : {os.environ.get('CURR_REGIME', 'NOT SET')}")
+
           today      = date.today().isoformat()
           server     = os.environ.get("MAIL_SERVER",   "smtp.gmail.com")
-          port       = int(os.environ.get("MAIL_PORT", "465"))
-          username   = os.environ["MAIL_USERNAME"]
-          password   = os.environ["MAIL_PASSWORD"]
-          mail_to    = os.environ["MAIL_TO"]   # comma-separated
+          port_str   = os.environ.get("MAIL_PORT", "465")
+          username   = os.environ.get("MAIL_USERNAME", "")
+          password   = os.environ.get("MAIL_PASSWORD", "")
+          mail_to    = os.environ.get("MAIL_TO", "")
+
+          if not username:
+              print("ERROR: MAIL_USERNAME secret is not set — cannot send email.")
+              sys.exit(1)
+          if not password:
+              print("ERROR: MAIL_PASSWORD secret is not set — cannot send email.")
+              sys.exit(1)
+          if not mail_to:
+              print("ERROR: MAIL_TO secret is not set — no recipients configured.")
+              sys.exit(1)
+
+          try:
+              port = int(port_str)
+          except ValueError:
+              print(f"ERROR: MAIL_PORT '{port_str}' is not a valid integer — defaulting to 465.")
+              port = 465
+
           recipients = [r.strip() for r in mail_to.split(",") if r.strip()]
+          print(f"Recipients ({len(recipients)}): {recipients}")
 
           regime_changed = os.environ.get("REGIME_CHANGED", "false") == "true"
           curr_regime    = os.environ.get("CURR_REGIME", "")
 
           subject_prefix = "⚠️ ALERT — " if regime_changed else ""
           subject = f"{subject_prefix}Iran Conflict Dashboard — {today} ({curr_regime})"
+          print(f"Subject: {subject}")
 
           html_path = pathlib.Path("outputs/email_summary.html")
           txt_path  = pathlib.Path("outputs/email_summary.txt")
+
+          print(f"HTML summary exists: {html_path.exists()}")
+          print(f"TXT summary exists : {txt_path.exists()}")
 
           if html_path.exists():
               html_body = html_path.read_text(encoding="utf-8")
@@ -202,11 +234,11 @@ jobs:
           msg.attach(MIMEText(txt_body,  "plain", "utf-8"))
           msg.attach(MIMEText(html_body, "html",  "utf-8"))
 
-          print(f"Sending to {len(recipients)} recipient(s) via {server}:{port}...")
+          print(f"Connecting to {server}:{port} via SMTP_SSL...")
           with smtplib.SMTP_SSL(server, port) as smtp:
               smtp.login(username, password)
               smtp.sendmail(username, recipients, msg.as_string())
-          print("Email sent.")
+          print("Email sent successfully.")
           PYEOF
 
       # ── Post regime alert as GitHub issue comment ─────────────────────────
