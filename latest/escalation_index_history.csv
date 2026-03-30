@@ -1,4 +1,5 @@
-run_timestamp,date,escalation_index,c_osint,c_sentiment,c_market,c_rf,escalation_score,p_escalation,p_stabilization,p_deescalation,p_short_war_2_4w,p_extended_1_3m,p_long_proxy_6m,portfolio_regime,model_confidence,hormuz_closure_prob,bam_closure_prob,expansion_index_val,market_roc_auc,data_completeness
-2026-03-29 19:47 UTC,2026-03-29,56.3,50.0,53.9,63.3,,0.132,0.1081,0.8904,0.0014,0.1329,0.4391,0.4281,Stabilization,1.0,40.9,46.9,0.0,0.9458641863825176,
-2026-03-29 21:56 UTC,2026-03-29,55.8,50.0,52.9,63.1,,0.1359,0.1129,0.8857,0.0013,0.1564,0.4423,0.4013,Stabilization,1.0,40.9,46.9,0.0,0.9458641863825176,
-2026-03-30 00:38 UTC,2026-03-30,53.9,50.0,46.3,65.4,,0.1338,0.1621,0.8366,0.0013,0.2844,0.3885,0.3271,Elevated Risk,,54.5,50.9,0.0,0.945661976911977,1.0
+run_timestamp,date,escalation_index,c_osint,c_sentiment,c_market,c_rf,escalation_score,p_escalation,p_stabilization,p_deescalation,p_short_war_2_4w,p_extended_1_3m,p_long_proxy_6m,portfolio_regime,model_confidence,hormuz_closure_prob,bam_closure_prob,expansion_index_val,market_roc_auc,data_completeness,icei_ci_lo,icei_ci_hi
+2026-03-29 19:47 UTC,2026-03-29,56.3,50.0,53.9,63.3,,0.132,0.1081,0.8904,0.0014,0.1329,0.4391,0.4281,Stabilization,1.0,40.9,46.9,0.0,0.9458641863825176,,,
+2026-03-29 21:56 UTC,2026-03-29,55.8,50.0,52.9,63.1,,0.1359,0.1129,0.8857,0.0013,0.1564,0.4423,0.4013,Stabilization,1.0,40.9,46.9,0.0,0.9458641863825176,,,
+2026-03-30 00:38 UTC,2026-03-30,53.9,50.0,46.3,65.4,,0.1338,0.1621,0.8366,0.0013,0.2844,0.3885,0.3271,Elevated Risk,,54.5,50.9,0.0,0.945661976911977,1.0,,
+2026-03-30 02:17 UTC,2026-03-30,54.4,50.0,47.4,65.6,,0.1323,0.1585,0.8402,0.0014,0.2682,0.3952,0.3366,Elevated Risk,,60.9,51.0,0.0,0.9458190355788333,1.0,48.5,58.4
