@@ -318,6 +318,35 @@ metrics_table = f"""
 run_url  = os.environ.get("RUN_URL",  "#")
 repo_url = os.environ.get("REPO_URL", "#")
 
+# ── Inline chart helpers ───────────────────────────────────────────────────
+
+def img_to_b64(path):
+    """Return a base64 data URI for a PNG, or None if the file doesn't exist."""
+    import base64
+    try:
+        with open(path, "rb") as f:
+            return "data:image/png;base64," + base64.b64encode(f.read()).decode()
+    except FileNotFoundError:
+        return None
+
+def chart_block(img_uri, caption):
+    """Return an HTML <figure> block, or empty string if no image available."""
+    if not img_uri:
+        return ""
+    return (
+        f'<figure style="margin:20px 0 8px 0;">'
+        f'<img src="{img_uri}" alt="{caption}" '
+        f'style="width:100%;max-width:600px;border:1px solid #E5E7EB;border-radius:4px;">'
+        f'<figcaption style="font-size:11px;color:#6B7280;margin-top:4px;">{caption}</figcaption>'
+        f'</figure>'
+    )
+
+_icei_chart  = img_to_b64(str(OUTPUT_DIR / "escalation_index_chart.png"))
+_dur_chart   = img_to_b64(str(OUTPUT_DIR / "conflict_duration_chart.png"))
+
+icei_chart_html = chart_block(_icei_chart, f"Iran Conflict Escalation Index (ICEI) — {TODAY}")
+dur_chart_html  = chart_block(_dur_chart,  "Conflict Duration Scenario Probabilities")
+
 html_body = f"""<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"></head>
@@ -333,6 +362,10 @@ html_body = f"""<!DOCTYPE html>
 {md_to_simple_html(summary_md)}
 
 {metrics_table}
+
+{icei_chart_html}
+
+{dur_chart_html}
 
 <p style="font-size:11px;color:#9CA3AF;margin-top:24px;border-top:1px solid #E5E7EB;padding-top:12px;">
   <a href="{run_url}" style="color:#4F8BBF;">Download full PDF report and charts</a> ·
