@@ -214,17 +214,44 @@ Below is the quantitative output from the Iran Conflict Escalation Dashboard —
 
 {context}
 
-Write a 3–4 paragraph plain-English briefing suitable for an email to investors and risk managers. Structure it as:
+REGIME DEFINITIONS (use these to calibrate your language — do not soften or upgrade the regime label):
+- Stabilization  (ICEI 0–35):   Conflict pressure is low. Routine monitoring only.
+- Elevated Risk  (ICEI 35–65):  Active conflict signals present. Hedging warranted.
+                                 This regime covers situations such as ongoing strikes,
+                                 chokepoint disruption, and proxy escalation — it does NOT
+                                 mean the situation is calm or contained.
+- Escalation     (ICEI 65–80):  Direct state-on-state military action likely or underway.
+                                 Significant portfolio repositioning indicated.
+- Regional War   (ICEI 80–90):  Multi-actor conflict with regional spread.
+- Nuclear Threshold (ICEI 90+): Existential escalation signals.
 
-1. **Headline / current assessment** — one sentence summarising the regime and ICEI reading.
-2. **What the signals are saying** — briefly interpret the escalation score, probability split, and any notable changes (regime flip, ICEI threshold crossing). Do not just restate the numbers — explain what they mean in plain English.
-3. **Chokepoint risk** — comment on Hormuz and Bab al-Mandeb closure risk scores only if either is above 40/100. Note that Hormuz scores are driven by real-time oil/options market signals and may underreport an active closure by up to 24 hours due to GDELT indexing lag. If both are below 40, omit this section.
-4. **Duration outlook** — what the conflict duration probabilities suggest about the most likely scenario if escalation does occur.
-5. **Positioning note** — one short paragraph on what the current regime implies for portfolio positioning, based on the regime guidance for {regime}.
+Write a 3–4 paragraph plain-English briefing. Structure it as:
 
-Tone: professional, direct, neutral. Avoid hyperbole. Flag genuine uncertainty where appropriate. Do not make specific buy/sell recommendations for individual securities. Do not present the model output as definitive — acknowledge it is a quantitative signal, not a forecast.
+1. **Headline / current assessment** — one sentence stating the regime and ICEI. Be direct.
+   If the model is reading Elevated Risk with active chokepoint disruption and ongoing
+   strikes, say so plainly. Do not soften a score of 50+ into language implying calm.
 
-Keep the total length to 300–400 words.
+2. **What the signals are saying** — interpret the escalation score and probability split
+   honestly. If the dominant signals are oil market stress, ILS weakness, and strike
+   volumes, name them. Explain what combination of events is driving the reading.
+
+3. **Chokepoint risk** — if Hormuz or Bab al-Mandeb is above 40/100, describe the
+   disruption plainly. Note that Hormuz market signals (oil, OVX) reprice within hours
+   but GDELT narrative may lag 12–24 hours, so the score may be a floor not a ceiling.
+
+4. **Duration outlook** — what the scenario probabilities suggest about how long elevated
+   tension is likely to persist.
+
+5. **Positioning note** — what the regime implies for portfolio exposure.
+
+Tone: direct and factual. Match the severity of the language to the severity of the
+signal readings — a model reading of 53/100 with active Hormuz disruption and ongoing
+strikes is a serious situation and should be described as one. Do not add diplomatic
+hedges that contradict what the numbers show. Do not make specific buy/sell
+recommendations. Acknowledge data limitations (GDELT lag, no classified sources) once
+in the chokepoint section — do not repeat the caveat throughout.
+
+Keep the total length to 350–450 words.
 """
 
 # ── Call Claude ────────────────────────────────────────────────────────────
@@ -240,7 +267,7 @@ print("Calling Claude for summary...")
 try:
     message = client.messages.create(
         model="claude-haiku-4-5-20251001",
-        max_tokens=600,
+        max_tokens=800,
         messages=[{"role": "user", "content": prompt}]
     )
     summary_md = message.content[0].text
