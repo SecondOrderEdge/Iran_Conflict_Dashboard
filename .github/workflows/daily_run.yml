@@ -66,7 +66,7 @@ jobs:
             -p ENABLE_BIGQUERY ${{ env.HAS_GCP_KEY == 'true' && 'True' || 'False' }} \
             -p GCP_PROJECT_ID "${{ secrets.GCP_PROJECT_ID || 'iran-conflict-dashboard' }}" \
             --kernel python3 \
-            --execution-timeout 1200 \
+            --execution-timeout 1800 \
             --report-mode
 
       # ── Detect regime change and build alert payload ──────────────────────
