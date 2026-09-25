@@ -16,7 +16,7 @@ env:
 jobs:
   run-dashboard:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     env:
       HAS_GCP_KEY:   ${{ secrets.GCP_SERVICE_ACCOUNT_KEY != '' }}
       HAS_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY != '' }}
