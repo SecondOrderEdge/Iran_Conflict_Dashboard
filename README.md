@@ -302,7 +302,7 @@ ENABLE_GDELT    = True    # use REST API with RSS fallback
 
 ### OSINT Database
 
-The OSINT layer pulls a public SQLite database of OSINT-verified Iran-Israel operations from GitHub (`OSINT_DB_URL` in Section 3). No credentials required. Set `ENABLE_OSINT = False` to skip this layer.
+The OSINT layer pulls a public SQLite database of OSINT-verified Iran-Israel operations from GitHub (`OSINT_DB_URL` in Section 3). If that snapshot has no incidents inside the model window, the notebook uses the `exports/latest` JSON incident file (`OSINT_JSON_URL`), which was still being updated after the sqlite file stopped. No credentials required. Set `ENABLE_OSINT = False` to skip this layer. A component with no live signals is left blank (shown as n/a) and dropped from the ICEI composite; its weight is redistributed across the components that did return data.
 
 ---
 
