@@ -120,9 +120,9 @@ To change the schedule, edit the `cron:` lines near the top of the workflow file
 | Secret | Value | Purpose |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | `sk-ant-...` | Claude generates the plain-English briefing |
-| `MAIL_USERNAME` | `you@gmail.com` | Sender address (Gmail recommended) |
+| `MAIL_USERNAME` | Your sender address | Sender address (Gmail recommended) |
 | `MAIL_PASSWORD` | 16-char app password | Gmail: [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) (requires 2FA) |
-| `MAIL_TO` | `you@gmail.com,colleague@firm.com` | Comma-separated distribution list — everyone here gets every daily email |
+| `MAIL_TO` | Comma-separated recipient addresses | Comma-separated distribution list — everyone here gets every daily email |
 | `MAIL_SERVER` | `smtp.gmail.com` | SMTP server (default: Gmail) |
 | `MAIL_PORT` | `465` | SMTP port (default: 465 SSL) |
 
@@ -253,11 +253,11 @@ All parameters are set in **Section 3** of the notebook. Key variables:
 ```python
 # Option A: Environment variables (recommended)
 import os
-os.environ["ACLED_EMAIL"] = "your_email@example.com"
+os.environ["ACLED_EMAIL"] = "<your ACLED account email>"
 os.environ["ACLED_PASSWORD"] = "your_acled_api_key"
 
 # Option B: Direct assignment (do NOT commit credentials to git)
-ACLED_EMAIL = "your_email@example.com"
+ACLED_EMAIL = "<your ACLED account email>"
 ACLED_PASSWORD = "your_acled_api_key"
 ```
 
